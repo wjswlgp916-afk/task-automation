@@ -158,7 +158,7 @@ def _header_table(quote: Quote, styles: dict) -> Table:
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (0, 0), 0),
         ("BOTTOMPADDING", (0, 0), (0, 0), 0),
-        ("TOPPADDING", (0, 1), (0, 1), 10 * mm),
+        ("TOPPADDING", (0, 1), (0, 1), 6 * mm),
         ("BOTTOMPADDING", (0, 1), (0, 1), 0),
     ]))
 
@@ -204,9 +204,12 @@ def _header_table(quote: Quote, styles: dict) -> Table:
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]))
 
+    # 좌측 블록(날짜+대학명)은 우측 정보표보다 짧아 위쪽에만 붙어 있으면
+    # 허공에 떠 보이므로, 정보표 높이 전체를 기준으로 세로 가운데 정렬한다.
     wrap = Table([[left, supplier]], colWidths=[84 * mm, 90 * mm])
     wrap.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
+        ("VALIGN", (1, 0), (1, 0), "TOP"),
     ]))
     return wrap
 
