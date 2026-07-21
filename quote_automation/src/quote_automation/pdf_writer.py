@@ -113,10 +113,11 @@ def _styles(bold: str) -> dict:
             "date_line", fontName=_FONT, fontSize=13, alignment=TA_LEFT, leading=18,
         ),
         "univ_line": ParagraphStyle(
-            "univ_line", fontName=_FONT, fontSize=13, alignment=TA_LEFT, leading=18,
+            "univ_line", fontName=bold, fontSize=15, alignment=TA_LEFT,
+            leading=20, leftIndent=10 * mm,
         ),
         "greeting": ParagraphStyle(
-            "greeting", fontName=_FONT, fontSize=12, alignment=TA_LEFT, leading=16,
+            "greeting", fontName=bold, fontSize=15, alignment=TA_LEFT, leading=20,
         ),
         "cell": ParagraphStyle(
             "cell", fontName=_FONT, fontSize=10, alignment=TA_CENTER, leading=13,
@@ -129,12 +130,12 @@ def _styles(bold: str) -> dict:
             leading=12, textColor=colors.HexColor("#555555"), leftIndent=10,
         ),
         "supplier_label": ParagraphStyle(
-            "supplier_label", fontName=bold, fontSize=10, alignment=TA_CENTER,
-            leading=13,
+            "supplier_label", fontName=bold, fontSize=9, alignment=TA_CENTER,
+            leading=12,
         ),
         "supplier_value": ParagraphStyle(
-            "supplier_value", fontName=_FONT, fontSize=10.5, alignment=TA_LEFT,
-            leading=14,
+            "supplier_value", fontName=_FONT, fontSize=9, alignment=TA_LEFT,
+            leading=12,
         ),
         "small": ParagraphStyle(
             "small", fontName=_FONT, fontSize=9, alignment=TA_CENTER, leading=12,
@@ -151,8 +152,8 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     #  행 간 간격은 셀 패딩으로 직접 준다)
     left = Table(
         [[Paragraph(date_str, styles["date_line"])],
-         [Paragraph(f"{quote.university}  귀중", styles["univ_line"])]],
-        colWidths=[84 * mm],
+         [Paragraph(f"{quote.university} 귀중", styles["univ_line"])]],
+        colWidths=[68 * mm],
     )
     left.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -162,14 +163,15 @@ def _header_table(quote: Quote, styles: dict) -> Table:
         ("BOTTOMPADDING", (0, 1), (0, 1), 0),
     ]))
 
-    # 우측: 공급자 정보 박스 (대표자 칸에 도장 이미지 삽입)
+    # 우측: 공급자 정보 박스 (원본 양식과 동일하게 5행 구조:
+    # 등록번호/소재지/TEL 은 단독 행, 상호+대표자·업태+종목 은 한 행에 나란히)
     c = COMPANY
     ceo_name = c.ceo.replace("(인)", "").strip()
     if _STAMP_PATH.exists():
-        stamp_img = Image(str(_STAMP_PATH), width=16 * mm, height=16 * mm)
+        stamp_img = Image(str(_STAMP_PATH), width=13 * mm, height=13 * mm)
         ceo_cell = Table(
             [[Paragraph(ceo_name, styles["supplier_value"]), stamp_img]],
-            colWidths=[32 * mm, 18 * mm],
+            colWidths=[14 * mm, 14 * mm],
         )
         ceo_cell.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -181,35 +183,37 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     else:
         ceo_cell = Paragraph(c.ceo, styles["supplier_value"])
 
-    rows = [
-        ["등록번호", Paragraph(c.registration_no, styles["supplier_value"])],
-        ["상호", Paragraph(c.name, styles["supplier_value"])],
-        ["대표자", ceo_cell],
-        ["소재지", Paragraph(c.address, styles["supplier_value"])],
-        ["업태", Paragraph(c.business_type, styles["supplier_value"])],
-        ["종목", Paragraph(c.business_item, styles["supplier_value"])],
-        ["TEL", Paragraph(c.tel, styles["supplier_value"])],
+    L, V = styles["supplier_label"], styles["supplier_value"]
+    col_widths = [20 * mm, 40 * mm, 16 * mm, 30 * mm]     # 합계 106mm
+    data = [
+        ["등록번호", Paragraph(c.registration_no, V), "", ""],
+        ["상호", Paragraph(c.name, V), "대표자", ceo_cell],
+        ["소재지", Paragraph(c.address, V), "", ""],
+        ["업태", Paragraph(c.business_type, V), "종목", Paragraph(c.business_item, V)],
+        ["TEL", Paragraph(c.tel, V), "", ""],
     ]
-    # 대표자 행은 도장 이미지가 들어가므로 다른 행보다 넉넉하게 높이를 준다.
-    row_heights = [8.4 * mm] * len(rows)
-    row_heights[2] = 17 * mm
-    supplier = Table(
-        [[Paragraph(r[0], styles["supplier_label"]), r[1]] for r in rows],
-        colWidths=[22 * mm, 62 * mm],
-        rowHeights=row_heights,
-    )
-    supplier.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 1.1, colors.black),
-        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#999999")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2f2f2")),
+    data = [[Paragraph(row[0], L)] + row[1:] for row in data]
+    for row in data:
+        if row[2] != "":
+            row[2] = Paragraph(row[2], L) if isinstance(row[2], str) else row[2]
+
+    row_heights = [8.4 * mm, 15 * mm, 8.4 * mm, 8.4 * mm, 8.4 * mm]
+    supplier = Table(data, colWidths=col_widths, rowHeights=row_heights)
+    span_rows = (0, 2, 4)   # 등록번호 / 소재지 / TEL: 값 칸이 나머지 3칸을 모두 차지
+    style = [
+        ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ]))
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+    ]
+    for r in span_rows:
+        style.append(("SPAN", (1, r), (3, r)))
+    supplier.setStyle(TableStyle(style))
 
     # 좌측 블록(날짜+대학명)은 우측 정보표보다 짧아 위쪽에만 붙어 있으면
     # 허공에 떠 보이므로, 정보표 높이 전체를 기준으로 세로 가운데 정렬한다.
-    wrap = Table([[left, supplier]], colWidths=[84 * mm, 90 * mm])
+    wrap = Table([[left, supplier]], colWidths=[68 * mm, 106 * mm])
     wrap.setStyle(TableStyle([
         ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
         ("VALIGN", (1, 0), (1, 0), "TOP"),
