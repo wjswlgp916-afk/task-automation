@@ -75,3 +75,11 @@ def test_generate_validation_error(client):
 def test_download_rejects_bad_token(client):
     assert client.get("/download/..%2f..%2fetc/passwd", headers=_auth()).status_code == 404
     assert client.get("/download/zzz/none.hwp", headers=_auth()).status_code == 404
+
+
+def test_generate_get_redirects_to_index_instead_of_405(client):
+    # 브라우저가 예전에 방문한 /generate 주소를 자동완성 등으로 GET 하면
+    # 405 대신 입력 화면(/)으로 되돌려야 한다.
+    r = client.get("/generate", headers=_auth())
+    assert r.status_code == 302
+    assert r.headers["Location"] == "/"

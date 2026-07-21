@@ -119,9 +119,14 @@ def _code_for_tool(tool_code: str, form) -> str | None:
     return f"{tool_code}_P" + (f"_{addons}" if addons else "")
 
 
-@app.route("/generate", methods=["POST"])
+@app.route("/generate", methods=["GET", "POST"])
 @require_password
 def do_generate():
+    if request.method == "GET":
+        # 폼 제출 없이 GET으로 직접 들어온 경우 (예: 브라우저가 예전에 방문한
+        # /generate 주소를 자동완성해 다시 연 경우) 405 대신 입력 화면으로 되돌린다.
+        return redirect(url_for("index"))
+
     f = request.form
     university = (f.get("university") or "").strip()
     date_str = f.get("date") or ""
