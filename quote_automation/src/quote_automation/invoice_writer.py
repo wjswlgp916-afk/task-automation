@@ -144,7 +144,7 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
         "bold_line": ParagraphStyle("bold_line", fontName=bold, fontSize=12, alignment=TA_LEFT, leading=17),
         "label": ParagraphStyle("label", fontName=bold, fontSize=10, alignment=TA_CENTER, leading=13),
         "value": ParagraphStyle("value", fontName=font, fontSize=10, alignment=TA_LEFT, leading=13),
-        "right": ParagraphStyle("right", fontName=font, fontSize=11, alignment=TA_CENTER, leading=16),
+        "center": ParagraphStyle("center", fontName=font, fontSize=11, alignment=TA_CENTER, leading=16),
     }
 
     doc = SimpleDocTemplate(
@@ -177,6 +177,7 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
         ],
         colWidths=[28 * mm, 70 * mm], rowHeights=8 * mm,
     )
+    account.hAlign = "LEFT"
     account.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.black),
@@ -187,14 +188,15 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
     story.append(account)
     story.append(Spacer(1, 10 * mm))
 
-    story.append(Paragraph(_date_text(quote), styles["normal"]))
+    story.append(Paragraph(_date_text(quote), styles["center"]))
     story.append(Spacer(1, 6 * mm))
 
     if pdf_common.STAMP_PATH.exists():
         stamp = Image(str(pdf_common.STAMP_PATH), width=13 * mm, height=13 * mm)
+        # "(인)" 문구는 도장 앞에 그대로 두고, 도장 이미지는 그 뒤에 배치한다.
         ceo_cell = Table(
-            [[Paragraph(COMPANY.ceo.replace("(인)", "").strip(), styles["value"]), stamp]],
-            colWidths=[30 * mm, 15 * mm],
+            [[Paragraph(COMPANY.ceo, styles["value"]), stamp]],
+            colWidths=[38 * mm, 15 * mm],
         )
         ceo_cell.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -213,6 +215,7 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
         ],
         colWidths=[30 * mm, 68 * mm], rowHeights=8.5 * mm,
     )
+    issuer.hAlign = "LEFT"
     issuer.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -221,7 +224,7 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
     story.append(issuer)
     story.append(Spacer(1, 14 * mm))
 
-    story.append(Paragraph(f"{quote.university} 총장 귀하", styles["right"]))
+    story.append(Paragraph(f"{quote.university} 총장 귀하", styles["center"]))
 
     doc.build(story)
     return out_path
