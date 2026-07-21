@@ -19,12 +19,15 @@ from reportlab.platypus import (
     TableStyle,
     Paragraph,
     Spacer,
+    Image,
 )
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from .catalog import COMPANY
 from .engine import Quote
+
+_STAMP_PATH = Path(__file__).parent / "templates" / "stamp.png"
 
 
 # --------------------------------------------------------------------------- #
@@ -78,10 +81,10 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
 
     # ---- 상단: 좌(수신/일자) · 우(공급자 정보) ----------------------------
     story.append(_header_table(quote, styles))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 6 * mm))
 
-    story.append(Paragraph("아래와 같이 견적합니다.", styles["normal"]))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("아래와 같이 견적합니다.", styles["greeting"]))
+    story.append(Spacer(1, 4 * mm))
 
     # ---- 합계금액 요약 ----------------------------------------------------
     story.append(_summary_table(quote, styles))
@@ -106,11 +109,32 @@ def _styles(bold: str) -> dict:
         "normal": ParagraphStyle(
             "normal", fontName=_FONT, fontSize=10, alignment=TA_LEFT, leading=14,
         ),
+        "date_line": ParagraphStyle(
+            "date_line", fontName=_FONT, fontSize=11.5, alignment=TA_LEFT, leading=16,
+        ),
+        "univ_line": ParagraphStyle(
+            "univ_line", fontName=_FONT, fontSize=11.5, alignment=TA_LEFT, leading=16,
+        ),
+        "greeting": ParagraphStyle(
+            "greeting", fontName=_FONT, fontSize=11, alignment=TA_LEFT, leading=15,
+        ),
         "cell": ParagraphStyle(
             "cell", fontName=_FONT, fontSize=9, alignment=TA_CENTER, leading=12,
         ),
         "cell_left": ParagraphStyle(
             "cell_left", fontName=_FONT, fontSize=9, alignment=TA_LEFT, leading=12,
+        ),
+        "cell_addon": ParagraphStyle(
+            "cell_addon", fontName=_FONT, fontSize=8.5, alignment=TA_LEFT,
+            leading=11, textColor=colors.HexColor("#555555"), leftIndent=10,
+        ),
+        "supplier_label": ParagraphStyle(
+            "supplier_label", fontName=bold, fontSize=9, alignment=TA_CENTER,
+            leading=12,
+        ),
+        "supplier_value": ParagraphStyle(
+            "supplier_value", fontName=_FONT, fontSize=9.5, alignment=TA_LEFT,
+            leading=13,
         ),
         "small": ParagraphStyle(
             "small", fontName=_FONT, fontSize=8, alignment=TA_CENTER, leading=11,
@@ -123,41 +147,61 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     date_str = f"서기   {d.year}년    {d.month:02d}월    {d.day:02d}일"
 
     # 좌측: 발급일자 + 수신처
+    # (표의 서로 다른 행에 걸친 문단은 spaceBefore 가 적용되지 않으므로,
+    #  행 간 간격은 셀 패딩으로 직접 준다)
     left = Table(
-        [[Paragraph(date_str, styles["normal"])],
-         [Spacer(1, 8 * mm)],
-         [Paragraph(f"{quote.university}  귀중", styles["normal"])]],
-        colWidths=[80 * mm],
+        [[Paragraph(date_str, styles["date_line"])],
+         [Paragraph(f"{quote.university}  귀중", styles["univ_line"])]],
+        colWidths=[84 * mm],
     )
     left.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTNAME", (0, 0), (-1, -1), _FONT),
-        ("BOTTOMPADDING", (0, 2), (0, 2), 0),
+        ("TOPPADDING", (0, 0), (0, 0), 0),
+        ("BOTTOMPADDING", (0, 0), (0, 0), 0),
+        ("TOPPADDING", (0, 1), (0, 1), 10 * mm),
+        ("BOTTOMPADDING", (0, 1), (0, 1), 0),
     ]))
 
-    # 우측: 공급자 정보 박스
+    # 우측: 공급자 정보 박스 (대표자 칸에 도장 이미지 삽입)
     c = COMPANY
+    ceo_name = c.ceo.replace("(인)", "").strip()
+    if _STAMP_PATH.exists():
+        stamp_img = Image(str(_STAMP_PATH), width=9 * mm, height=9 * mm)
+        ceo_cell = Table(
+            [[Paragraph(ceo_name, styles["supplier_value"]), stamp_img]],
+            colWidths=[40 * mm, 11 * mm],
+        )
+        ceo_cell.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        ceo_cell = Paragraph(c.ceo, styles["supplier_value"])
+
+    rows = [
+        ["등록번호", Paragraph(c.registration_no, styles["supplier_value"])],
+        ["상호", Paragraph(c.name, styles["supplier_value"])],
+        ["대표자", ceo_cell],
+        ["소재지", Paragraph(c.address, styles["supplier_value"])],
+        ["업태", Paragraph(c.business_type, styles["supplier_value"])],
+        ["종목", Paragraph(c.business_item, styles["supplier_value"])],
+        ["TEL", Paragraph(c.tel, styles["supplier_value"])],
+    ]
     supplier = Table(
-        [
-            ["등록번호", c.registration_no],
-            ["상호", c.name],
-            ["대표자", c.ceo],
-            ["소재지", c.address],
-            ["업태", c.business_type],
-            ["종목", c.business_item],
-            ["TEL", c.tel],
-        ],
-        colWidths=[18 * mm, 66 * mm],
+        [[Paragraph(r[0], styles["supplier_label"]), r[1]] for r in rows],
+        colWidths=[20 * mm, 64 * mm],
+        rowHeights=7.4 * mm,
     )
     supplier.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), _FONT),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("BOX", (0, 0), (-1, -1), 1.1, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#999999")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2f2f2")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]))
 
     wrap = Table([[left, supplier]], colWidths=[84 * mm, 90 * mm])
@@ -190,13 +234,14 @@ def _items_table(quote: Quote, styles: dict) -> Table:
     rows = [[Paragraph(h, styles["cell"]) for h in header]]
 
     span_cmds = []
-    row_idx = 1
+    addon_rows = []
     for item in quote.items:
         if item.kind == "main":
             name = Paragraph(item.name, styles["cell_left"])
         else:
-            # 부가서비스: 품명 칸을 조금 들여쓰기
-            name = Paragraph("　" + item.name, styles["cell_left"])
+            # 부가서비스: 상위 항목에 딸린 하위 서비스임을 들여쓰기+연결선으로 표시
+            addon_rows.append(len(rows))
+            name = Paragraph("　└ " + item.name, styles["cell_addon"])
         rows.append([
             name,
             Paragraph(item.spec, styles["cell"]),
@@ -206,18 +251,18 @@ def _items_table(quote: Quote, styles: dict) -> Table:
             Paragraph(_num(item.vat), styles["cell"]),
             Paragraph("", styles["cell"]),
         ])
-        row_idx += 1
 
-    # 합계 행
+    # 합계 행: 공급가액·세액을 나누지 않고 부가세 포함 합계 한 값으로 표시
     rows.append([
         Paragraph("합 계", styles["cell"]),
         "", "", "",
-        Paragraph(_num(quote.total_supply), styles["cell"]),
-        Paragraph(_num(quote.total_vat), styles["cell"]),
+        Paragraph(_num(quote.grand_total), styles["cell"]),
+        "",
         Paragraph("", styles["cell"]),
     ])
     total_row = len(rows) - 1
     span_cmds.append(("SPAN", (0, total_row), (3, total_row)))
+    span_cmds.append(("SPAN", (4, total_row), (5, total_row)))
 
     col_widths = [58 * mm, 20 * mm, 12 * mm, 24 * mm, 24 * mm, 20 * mm, 16 * mm]
     t = Table(rows, colWidths=col_widths, repeatRows=1)
@@ -226,10 +271,12 @@ def _items_table(quote: Quote, styles: dict) -> Table:
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-        ("BACKGROUND", (0, total_row), (-1, total_row), colors.whitesmoke),
+        ("BACKGROUND", (0, total_row), (-1, total_row), colors.HexColor("#eef2ee")),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
+    for r in addon_rows:
+        style.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#fafafa")))
     style.extend(span_cmds)
     t.setStyle(TableStyle(style))
     return t
