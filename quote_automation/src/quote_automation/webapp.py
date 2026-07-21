@@ -56,7 +56,9 @@ def _check_auth(pw: str) -> bool:
     expected = _expected_password()
     if not expected:            # 비번 미설정 시 접근 허용(로컬 개발용)
         return True
-    return hmac.compare_digest(pw or "", expected)
+    # hmac.compare_digest 는 비ASCII 문자가 섞인 str 비교를 지원하지 않으므로
+    # (한글 비밀번호 등) UTF-8 바이트로 인코딩해 비교한다.
+    return hmac.compare_digest((pw or "").encode("utf-8"), expected.encode("utf-8"))
 
 
 def require_password(f):
