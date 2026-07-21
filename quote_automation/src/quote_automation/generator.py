@@ -14,8 +14,6 @@ from typing import Iterable, List
 
 from .documents import DOCUMENT_TYPES, DocumentType, template_path
 from .engine import build_quote, Quote
-from .hwp_writer import render_hwp
-from .pdf_writer import render_pdf
 
 
 @dataclass(frozen=True)
@@ -64,13 +62,10 @@ def generate(
 
         if "hwp" in fmts:
             tpl = template_path(doc_type)
-            path = render_hwp(quote, out_dir / f"{stem}.hwp", template=tpl)
+            path = doc_type.render_hwp(quote, out_dir / f"{stem}.hwp", tpl)
             created.append(GeneratedFile(doc_type.label, path))
         if "pdf" in fmts and doc_type.supports_pdf:
-            path = render_pdf(
-                quote, out_dir / f"{stem}.pdf",
-                title=doc_type.pdf_title, greeting=doc_type.pdf_greeting,
-            )
+            path = doc_type.render_pdf(quote, out_dir / f"{stem}.pdf")
             created.append(GeneratedFile(doc_type.label, path))
 
     return created

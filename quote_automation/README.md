@@ -87,12 +87,16 @@ APP_PASSWORD=원하는비밀번호 python -m quote_automation.webapp
 |------|------|------|
 | 견적서 (`quote`) | HWP + PDF | 기본값 |
 | 거래명세서 (`transaction_statement`) | HWP + PDF | 견적서와 표 구조가 동일한 원본 양식, 제목(과 인사말 유무)만 다름 |
+| 대금청구서 (`invoice`) | HWP + PDF | 품목 표 없는 1페이지 공문. 청구금액은 견적 합계와 자동 연동. K 단독/결합이면 건명 기본값 유지, U 단독이면 "대학 혁신역량 진단 및 분석"으로 자동 변경 |
 
-새 서류(과업지시서·대금청구서 등)를 추가할 때는 `documents.py` 의
-`DOCUMENT_TYPES` 에 항목 하나만 등록하면 CLI·웹 대시보드에 자동으로 나타난다.
-견적서와 표 구조가 같은 서류는 PDF 도 `pdf_title`/`pdf_greeting` 만 지정하면
-바로 지원되고, 구조가 완전히 다른 서류(여러 페이지 공문서 등)는 HWP만
-우선 지원하도록 `supports_pdf=False` 로 등록하면 된다.
+새 서류(과업지시서 등)를 추가할 때는 `documents.py` 의 `DOCUMENT_TYPES` 에
+항목 하나만 등록하면 CLI·웹 대시보드에 자동으로 나타난다. 서류 종류마다
+`render_hwp`/`render_pdf` 함수를 직접 지정하는 구조라, 표 구조가 같은
+서류(거래명세서)는 견적서 렌더러를 파라미터만 바꿔 재사용하고, 구조가
+완전히 다른 서류(대금청구서처럼 문장 안에 값이 섞여 있는 공문)는
+전용 렌더러(`invoice_writer.py`)를 새로 만들어 등록한다.
+`hwp_writer.replace_literal_everywhere()` 로 문단 안 일부 텍스트만
+찾아 바꿀 수 있어, 라벨과 값이 한 문장에 섞인 경우도 처리할 수 있다.
 
 ---
 
@@ -153,18 +157,22 @@ for gf in files:
 
 ```
 src/quote_automation/
-  catalog.py      회사정보·설문도구·부가서비스·가격  ← 설정은 여기만 고치면 됨
-  documents.py    서류 종류 레지스트리 (견적서·거래명세서 …)  ← 서류 추가는 여기만
-  korean_num.py   금액 → 한글 표기 (예: 삼백삼십만 원정)
-  engine.py       등급코드 파싱 → 견적 데이터(품목/합계 계산)
-  pdf_writer.py   PDF 렌더링 (reportlab, 양식 재현)
-  hwp_writer.py   HWP 생성 (원본 양식 편집, 서류별 템플릿 지원)
-  cfbf.py         HWP 컨테이너(OLE 복합문서) 리더/라이터
-  generator.py    고수준 API (여러 서류를 한 번에 HWP/PDF 로)
-  cli.py          명령줄 인터페이스
-  webapp.py       웹 대시보드 (Flask)
-  templates/      원본 서류 양식들 (quote_template.hwp, transaction_statement_template.hwp …)
-tests/            엔진·HWP 구조·문서 레지스트리 검증 테스트
+  catalog.py        회사정보·설문도구·부가서비스·가격  ← 설정은 여기만 고치면 됨
+  documents.py      서류 종류 레지스트리 (견적서·거래명세서·대금청구서 …)  ← 서류 추가는 여기만
+  korean_num.py     금액 → 한글 표기 (예: 삼백삼십만 원정 / 삼백삼십만원)
+  engine.py         등급코드 파싱 → 견적 데이터(품목/합계 계산)
+  pdf_common.py     PDF 렌더러 공용 유틸 (폰트 등록·도장 경로)
+  pdf_writer.py     견적서/거래명세서 PDF 렌더링 (reportlab, 표 구조 재현)
+  hwp_writer.py     견적서/거래명세서 HWP 생성 (원본 양식 편집) +
+                    범용 문단 치환 유틸(replace_literal_everywhere 등)
+  invoice_writer.py 대금청구서 전용 렌더러 (문장형 공문, HWP+PDF)
+  cfbf.py           HWP 컨테이너(OLE 복합문서) 리더/라이터
+  generator.py      고수준 API (여러 서류를 한 번에 HWP/PDF 로)
+  cli.py            명령줄 인터페이스
+  webapp.py         웹 대시보드 (Flask)
+  templates/        원본 서류 양식들 (quote_template.hwp, transaction_statement_template.hwp,
+                    invoice_template.hwp …)
+tests/              엔진·HWP 구조·문서 레지스트리 검증 테스트
 ```
 
 ### 서비스/가격을 바꾸려면
@@ -199,11 +207,12 @@ tests/            엔진·HWP 구조·문서 레지스트리 검증 테스트
 현재는 "대학+등급코드 입력 → 서류 선택 → 생성"(웹 대시보드 / CLI) 단계입니다.
 이후 확장 방향:
 
-1. **다른 서류 추가** — 과업지시서·대금청구서·독점공급확인서·보안확약서·
-   수의계약확인서 등. 이들은 대학명·날짜 외에 본문 여러 곳에 대학명이
-   섞여 있거나(예: "◯ OO대학교 학부교육 실태조사...") 등급에 따라 문단을
-   조건부로 지우는 로직이 필요해, `documents.py` 등록 + `hwp_writer.py` 의
-   범용 치환 유틸리티 확장이 함께 필요합니다.
+1. **다른 서류 추가** — 과업지시서·독점공급확인서·보안확약서·수의계약확인서 등.
+   이들은 본문 여러 곳에 대학명이 섞여 있거나(예: "◯ OO대학교 학부교육
+   실태조사...") 등급에 따라 문단을 조건부로 지우는 로직이 필요합니다.
+   `hwp_writer.replace_literal_everywhere()` 로 문장 안 일부 치환은 이미
+   지원하므로, 필요하면 "조건에 맞는 문단을 통째로 지우는" 유틸리티만
+   추가하면 됩니다 (대금청구서의 건명 조건부 변경과 비슷한 패턴).
 2. **노션 연동** — 노션 DB에서 각 대학의 신청등급 태그를 읽어 일괄 생성하거나,
    대시보드에 "노션에서 불러오기" 버튼을 추가. 신청등급 태그(K_P_12 등)가 이미
    이 도구의 등급코드와 같은 형식이라 매끄럽게 붙습니다.

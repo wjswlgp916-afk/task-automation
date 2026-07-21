@@ -11,8 +11,6 @@ from pathlib import Path
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     SimpleDocTemplate,
     Table,
@@ -24,34 +22,21 @@ from reportlab.platypus import (
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
+from . import pdf_common
 from .catalog import COMPANY
 from .engine import Quote
 
-_STAMP_PATH = Path(__file__).parent / "templates" / "stamp.png"
+_STAMP_PATH = pdf_common.STAMP_PATH
+_FONT = pdf_common.FONT
+_FONT_BOLD = pdf_common.FONT_BOLD
 
 
-# --------------------------------------------------------------------------- #
-# 한글 폰트 등록 (NanumGothic)
-# --------------------------------------------------------------------------- #
-_FONT = "NanumGothic"
-_FONT_BOLD = "NanumGothic-Bold"
-_FONT_PATHS = [
-    ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", _FONT),
-    ("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", _FONT_BOLD),
-]
-
-
-def _register_fonts() -> None:
-    for path, name in _FONT_PATHS:
-        if name not in pdfmetrics.getRegisteredFontNames() and Path(path).exists():
-            pdfmetrics.registerFont(TTFont(name, path))
-    # 폰트가 없으면 기본 폰트로 대체
-    if _FONT not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFontFamily(_FONT, normal="Helvetica")
+def _register_fonts() -> str:
+    return pdf_common.register_fonts()
 
 
 def _num(v: int) -> str:
-    return f"{v:,}" if v else "0"
+    return pdf_common.format_amount(v)
 
 
 def render_pdf(
@@ -70,11 +55,9 @@ def render_pdf(
     title    : 상단 제목 (예: '견 적 서', '거 래 명 세 서')
     greeting : "아래와 같이 ~" 인사말. 원본 양식에 해당 문구가 없으면 None.
     """
-    _register_fonts()
+    bold = _register_fonts()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    bold = _FONT_BOLD if _FONT_BOLD in pdfmetrics.getRegisteredFontNames() else _FONT
 
     doc = SimpleDocTemplate(
         str(out_path),

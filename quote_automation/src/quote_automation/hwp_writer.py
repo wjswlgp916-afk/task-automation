@@ -121,6 +121,47 @@ def set_plain_text(para_hdr: Record, para_txt: Record, new_text: str) -> None:
     para_hdr.payload = struct.pack("<I", nchars) + para_hdr.payload[4:]
 
 
+def _adjust_para_header_length(para_hdr: Record, delta: int) -> None:
+    (nchars,) = struct.unpack("<I", para_hdr.payload[0:4])
+    new_len = (nchars & 0x7FFFFFFF) + delta
+    nchars = (nchars & 0x80000000) | (new_len & 0x7FFFFFFF)
+    para_hdr.payload = struct.pack("<I", nchars) + para_hdr.payload[4:]
+
+
+def replace_literal(para_hdr: Record, para_txt: Record, old: str, new: str) -> bool:
+    """문단 안에서 순수 텍스트 ``old`` 부분만 찾아 ``new`` 로 치환한다.
+
+    라벨과 값이 한 문장에 섞인 경우(예: '청구금액 : 금 O백O십O만원 (\\\\ 0,000,000 )')
+    처럼 문단 전체가 아니라 **일부만** 바꿔야 할 때 쓴다. ``old`` 가 없으면
+    아무것도 하지 않고 False 를 반환한다.
+
+    ``old`` 는 인라인 컨트롤(누름틀 등)에 끊기지 않는 순수 텍스트 구간이어야
+    한다 — 원시 코드유닛을 그대로 대조하므로, 대상 구간에 제어문자가
+    섞여 있으면 찾지 못한다 (본문 문장 치환에는 보통 해당 없음).
+    """
+    units = list(_units(para_txt))
+    old_units = [ord(c) for c in old]
+    n = len(old_units)
+    for i in range(len(units) - n + 1):
+        if units[i:i + n] == old_units:
+            new_units = units[:i] + [ord(c) for c in new] + units[i + n:]
+            para_txt.payload = b"".join(struct.pack("<H", u) for u in new_units)
+            _adjust_para_header_length(para_hdr, len(new_units) - len(units))
+            return True
+    return False
+
+
+def replace_literal_everywhere(records: List[Record], old: str, new: str) -> int:
+    """문서 전체 문단을 훑어 ``old`` 를 ``new`` 로 치환한다. 치환 횟수를 반환."""
+    count = 0
+    for i, r in enumerate(records):
+        if r.tag == PARA_TEXT:
+            hdr = _prev_para_header(records, i)
+            if hdr and replace_literal(hdr, r, old, new):
+                count += 1
+    return count
+
+
 # --------------------------------------------------------------------------- #
 # 셀 / 행 모델
 # --------------------------------------------------------------------------- #

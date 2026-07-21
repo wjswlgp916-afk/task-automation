@@ -26,12 +26,12 @@ def _four_digit_to_hangul(n: int) -> str:
     return result
 
 
-def number_to_korean(amount: int) -> str:
-    """정수 금액을 '..원정' 한글 표기로 변환한다."""
+def _amount_to_hangul(amount: int) -> str:
+    """정수 금액을 순수 한글 숫자로만 변환한다 (접미사 없음). 0 이면 '영'."""
     if amount < 0:
         raise ValueError("금액은 음수가 될 수 없습니다.")
     if amount == 0:
-        return "영 원정"
+        return "영"
 
     groups = []                            # 4자리씩 묶음 (낮은 자리부터)
     n = amount
@@ -46,7 +46,22 @@ def number_to_korean(amount: int) -> str:
             continue
         parts.append(_four_digit_to_hangul(chunk) + _BIG_UNITS[idx])
 
-    return "".join(parts) + " 원정"
+    return "".join(parts)
+
+
+def number_to_korean(amount: int) -> str:
+    """정수 금액을 '..원정' 한글 표기로 변환한다 (견적서·거래명세서용)."""
+    if amount == 0:
+        return "영 원정"
+    return _amount_to_hangul(amount) + " 원정"
+
+
+def number_to_korean_plain(amount: int) -> str:
+    """'원정' 없이 순수 한글 숫자만 반환한다 (예: 대금청구서의 '삼백삼십만원').
+
+    호출부에서 원하는 접미사("원" 등)를 직접 붙여 쓴다.
+    """
+    return _amount_to_hangul(amount)
 
 
 def won_amount(amount: int) -> str:
