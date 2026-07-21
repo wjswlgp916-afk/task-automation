@@ -107,37 +107,37 @@ def _styles(bold: str) -> dict:
             spaceAfter=0, leading=30,
         ),
         "normal": ParagraphStyle(
-            "normal", fontName=_FONT, fontSize=10, alignment=TA_LEFT, leading=14,
+            "normal", fontName=_FONT, fontSize=11, alignment=TA_LEFT, leading=15,
         ),
         "date_line": ParagraphStyle(
-            "date_line", fontName=_FONT, fontSize=11.5, alignment=TA_LEFT, leading=16,
+            "date_line", fontName=_FONT, fontSize=13, alignment=TA_LEFT, leading=18,
         ),
         "univ_line": ParagraphStyle(
-            "univ_line", fontName=_FONT, fontSize=11.5, alignment=TA_LEFT, leading=16,
+            "univ_line", fontName=_FONT, fontSize=13, alignment=TA_LEFT, leading=18,
         ),
         "greeting": ParagraphStyle(
-            "greeting", fontName=_FONT, fontSize=11, alignment=TA_LEFT, leading=15,
+            "greeting", fontName=_FONT, fontSize=12, alignment=TA_LEFT, leading=16,
         ),
         "cell": ParagraphStyle(
-            "cell", fontName=_FONT, fontSize=9, alignment=TA_CENTER, leading=12,
+            "cell", fontName=_FONT, fontSize=10, alignment=TA_CENTER, leading=13,
         ),
         "cell_left": ParagraphStyle(
-            "cell_left", fontName=_FONT, fontSize=9, alignment=TA_LEFT, leading=12,
+            "cell_left", fontName=_FONT, fontSize=10, alignment=TA_LEFT, leading=13,
         ),
         "cell_addon": ParagraphStyle(
-            "cell_addon", fontName=_FONT, fontSize=8.5, alignment=TA_LEFT,
-            leading=11, textColor=colors.HexColor("#555555"), leftIndent=10,
+            "cell_addon", fontName=_FONT, fontSize=9.5, alignment=TA_LEFT,
+            leading=12, textColor=colors.HexColor("#555555"), leftIndent=10,
         ),
         "supplier_label": ParagraphStyle(
-            "supplier_label", fontName=bold, fontSize=9, alignment=TA_CENTER,
-            leading=12,
-        ),
-        "supplier_value": ParagraphStyle(
-            "supplier_value", fontName=_FONT, fontSize=9.5, alignment=TA_LEFT,
+            "supplier_label", fontName=bold, fontSize=10, alignment=TA_CENTER,
             leading=13,
         ),
+        "supplier_value": ParagraphStyle(
+            "supplier_value", fontName=_FONT, fontSize=10.5, alignment=TA_LEFT,
+            leading=14,
+        ),
         "small": ParagraphStyle(
-            "small", fontName=_FONT, fontSize=8, alignment=TA_CENTER, leading=11,
+            "small", fontName=_FONT, fontSize=9, alignment=TA_CENTER, leading=12,
         ),
     }
 
@@ -166,10 +166,10 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     c = COMPANY
     ceo_name = c.ceo.replace("(인)", "").strip()
     if _STAMP_PATH.exists():
-        stamp_img = Image(str(_STAMP_PATH), width=9 * mm, height=9 * mm)
+        stamp_img = Image(str(_STAMP_PATH), width=10 * mm, height=10 * mm)
         ceo_cell = Table(
             [[Paragraph(ceo_name, styles["supplier_value"]), stamp_img]],
-            colWidths=[40 * mm, 11 * mm],
+            colWidths=[38 * mm, 12 * mm],
         )
         ceo_cell.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -192,8 +192,8 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     ]
     supplier = Table(
         [[Paragraph(r[0], styles["supplier_label"]), r[1]] for r in rows],
-        colWidths=[20 * mm, 64 * mm],
-        rowHeights=7.4 * mm,
+        colWidths=[22 * mm, 62 * mm],
+        rowHeights=8.4 * mm,
     )
     supplier.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1.1, colors.black),
