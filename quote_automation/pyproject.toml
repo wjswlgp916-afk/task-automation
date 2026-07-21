@@ -24,7 +24,7 @@ quote-gen = "quote_automation.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-quote_automation = ["templates/*.hwp"]
+quote_automation = ["templates/*.hwp", "webapp_templates/*.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
