@@ -54,8 +54,22 @@ def _num(v: int) -> str:
     return f"{v:,}" if v else "0"
 
 
-def render_pdf(quote: Quote, out_path: str | Path) -> Path:
-    """견적서를 PDF 파일로 저장하고 경로를 반환한다."""
+def render_pdf(
+    quote: Quote,
+    out_path: str | Path,
+    title: str = "견 적 서",
+    greeting: str | None = "아래와 같이 견적합니다.",
+) -> Path:
+    """서류를 PDF 파일로 저장하고 경로를 반환한다.
+
+    견적서·거래명세서 등은 표 구조(공급자 정보·품목 테이블·합계·도장)가
+    동일하고 제목·인사말 문구만 다르므로, 이 두 값만 파라미터로 받는다.
+
+    Parameters
+    ----------
+    title    : 상단 제목 (예: '견 적 서', '거 래 명 세 서')
+    greeting : "아래와 같이 ~" 인사말. 원본 양식에 해당 문구가 없으면 None.
+    """
     _register_fonts()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,22 +83,23 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
         rightMargin=18 * mm,
         topMargin=16 * mm,
         bottomMargin=16 * mm,
-        title=f"견적서_{quote.university}",
+        title=f"{title.strip()}_{quote.university}",
     )
 
     styles = _styles(bold)
     story = []
 
     # ---- 제목 --------------------------------------------------------------
-    story.append(Paragraph("견 적 서", styles["title"]))
+    story.append(Paragraph(title, styles["title"]))
     story.append(Spacer(1, 6 * mm))
 
     # ---- 상단: 좌(수신/일자) · 우(공급자 정보) ----------------------------
     story.append(_header_table(quote, styles))
     story.append(Spacer(1, 6 * mm))
 
-    story.append(Paragraph("아래와 같이 견적합니다.", styles["greeting"]))
-    story.append(Spacer(1, 4 * mm))
+    if greeting:
+        story.append(Paragraph(greeting, styles["greeting"]))
+        story.append(Spacer(1, 4 * mm))
 
     # ---- 합계금액 요약 ----------------------------------------------------
     story.append(_summary_table(quote, styles))

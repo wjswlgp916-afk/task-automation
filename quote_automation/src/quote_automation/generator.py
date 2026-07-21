@@ -67,7 +67,10 @@ def generate(
             path = render_hwp(quote, out_dir / f"{stem}.hwp", template=tpl)
             created.append(GeneratedFile(doc_type.label, path))
         if "pdf" in fmts and doc_type.supports_pdf:
-            path = render_pdf(quote, out_dir / f"{stem}.pdf")
+            path = render_pdf(
+                quote, out_dir / f"{stem}.pdf",
+                title=doc_type.pdf_title, greeting=doc_type.pdf_greeting,
+            )
             created.append(GeneratedFile(doc_type.label, path))
 
     return created

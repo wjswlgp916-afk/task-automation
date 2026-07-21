@@ -68,7 +68,7 @@ def test_generate_separate(client):
 
 
 def test_generate_multiple_doc_types(client):
-    # 견적서(HWP+PDF) + 거래명세서(HWP만) 를 동시에 선택
+    # 견적서(HWP+PDF) + 거래명세서(HWP+PDF) 를 동시에 선택
     r = client.post("/generate", headers=_auth(), data={
         "university": "서원대학교", "date": "2026-07-21",
         "K_include": "on", "K_grade": "P",
@@ -77,7 +77,7 @@ def test_generate_multiple_doc_types(client):
     })
     html = r.get_data(as_text=True)
     assert r.status_code == 200
-    assert html.count("/download/") == 3   # 견적서 HWP+PDF(2) + 거래명세서 HWP(1)
+    assert html.count("/download/") == 4   # (견적서 + 거래명세서) × (HWP+PDF)
     assert "거래명세서" in html
     assert "견적서" in html
 

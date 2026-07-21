@@ -26,7 +26,8 @@ def test_transaction_statement_template_registered():
     assert "transaction_statement" in DOCUMENT_TYPES
     doc = DOCUMENT_TYPES["transaction_statement"]
     assert doc.label == "거래명세서"
-    assert doc.supports_pdf is False
+    assert doc.supports_pdf is True
+    assert doc.pdf_greeting is None    # 원본 양식에 인사말 문구가 없음
     path = template_path(doc)
     assert path is not None and path.exists()
 
@@ -59,9 +60,26 @@ def test_generate_produces_both_doc_types_with_correct_formats(tmp_path):
         by_label.setdefault(gf.doc_label, []).append(gf.path.suffix)
 
     assert sorted(by_label["견적서"]) == [".hwp", ".pdf"]
-    assert by_label["거래명세서"] == [".hwp"]   # PDF 미지원이므로 HWP만
+    assert sorted(by_label["거래명세서"]) == [".hwp", ".pdf"]
     for gf in files:
         assert gf.path.is_file()
+
+
+def test_transaction_statement_pdf_title_and_no_greeting(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    from quote_automation.pdf_writer import render_pdf
+
+    q = build_quote("호서대학교", "K_P_2+U_B", date(2025, 8, 19))
+    doc = DOCUMENT_TYPES["transaction_statement"]
+    out = render_pdf(q, tmp_path / "ts.pdf", title=doc.pdf_title, greeting=doc.pdf_greeting)
+
+    pdf = pdfium.PdfDocument(str(out))
+    text = pdf[0].get_textpage().get_text_range()
+    assert "거 래 명 세 서" in text
+    assert "견 적 서" not in text
+    assert "아래와 같이 견적합니다" not in text   # 원본에 없는 문구는 PDF에도 없어야 함
+    assert "3,300,000" in text
 
 
 def test_generate_unknown_doc_type_raises(tmp_path):

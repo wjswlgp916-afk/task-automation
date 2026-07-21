@@ -22,6 +22,8 @@ class DocumentType:
     label: str                        # 화면에 보여줄 이름
     template_filename: Optional[str]  # templates/ 안의 hwp 파일명 (None = 기본 견적서 양식)
     supports_pdf: bool                # PDF 출력을 지원하는지
+    pdf_title: str = "견 적 서"        # PDF 상단 제목
+    pdf_greeting: Optional[str] = "아래와 같이 견적합니다."  # None 이면 인사말 생략
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -32,12 +34,16 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
         label="견적서",
         template_filename=None,        # hwp_writer 의 기본 quote_template.hwp 사용
         supports_pdf=True,
+        pdf_title="견 적 서",
+        pdf_greeting="아래와 같이 견적합니다.",
     ),
     "transaction_statement": DocumentType(
         key="transaction_statement",
         label="거래명세서",
         template_filename="transaction_statement_template.hwp",
-        supports_pdf=False,            # 우선 HWP만 지원 (사용자 결정)
+        supports_pdf=True,
+        pdf_title="거 래 명 세 서",
+        pdf_greeting=None,             # 원본 양식에 인사말 문구가 없음
     ),
 }
 

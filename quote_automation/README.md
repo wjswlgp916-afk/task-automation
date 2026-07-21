@@ -86,10 +86,13 @@ APP_PASSWORD=원하는비밀번호 python -m quote_automation.webapp
 | 서류 | 형식 | 비고 |
 |------|------|------|
 | 견적서 (`quote`) | HWP + PDF | 기본값 |
-| 거래명세서 (`transaction_statement`) | HWP만 | 견적서와 표 구조가 동일한 원본 양식, 제목만 다름 |
+| 거래명세서 (`transaction_statement`) | HWP + PDF | 견적서와 표 구조가 동일한 원본 양식, 제목(과 인사말 유무)만 다름 |
 
 새 서류(과업지시서·대금청구서 등)를 추가할 때는 `documents.py` 의
 `DOCUMENT_TYPES` 에 항목 하나만 등록하면 CLI·웹 대시보드에 자동으로 나타난다.
+견적서와 표 구조가 같은 서류는 PDF 도 `pdf_title`/`pdf_greeting` 만 지정하면
+바로 지원되고, 구조가 완전히 다른 서류(여러 페이지 공문서 등)는 HWP만
+우선 지원하도록 `supports_pdf=False` 로 등록하면 된다.
 
 ---
 
