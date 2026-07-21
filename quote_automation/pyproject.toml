@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quote-automation"
+version = "0.1.0"
+description = "성균관대학교 산학협력단 견적서(K-NSSE / UICA) 자동 생성기"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "olefile>=0.47",
+    "reportlab>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+quote-gen = "quote_automation.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+quote_automation = ["templates/*.hwp"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
