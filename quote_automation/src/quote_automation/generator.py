@@ -1,15 +1,27 @@
-"""고수준 API — 대학명 + 등급코드로 HWP / PDF 견적서 파일을 만든다."""
+"""고수준 API — 대학명 + 등급코드로 HWP / PDF 서류 파일을 만든다.
+
+견적서·거래명세서처럼 같은 견적 데이터(대학명·등급코드·금액)를 공유하는
+서류들을 ``documents.DOCUMENT_TYPES`` 레지스트리 기준으로 한 번에 생성한다.
+"""
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date as date_cls
 from pathlib import Path
 from typing import Iterable, List
 
+from .documents import DOCUMENT_TYPES, DocumentType, template_path
 from .engine import build_quote, Quote
 from .hwp_writer import render_hwp
 from .pdf_writer import render_pdf
+
+
+@dataclass(frozen=True)
+class GeneratedFile:
+    doc_label: str    # 서류 이름 (예: '견적서', '거래명세서')
+    path: Path
 
 
 def _safe(name: str) -> str:
@@ -23,8 +35,9 @@ def generate(
     out_dir: str | Path = "output",
     issue_date: date_cls | None = None,
     formats: Iterable[str] = ("hwp", "pdf"),
-) -> List[Path]:
-    """견적서 한 장을 만들어 생성된 파일 경로 목록을 반환한다.
+    doc_types: Iterable[str] = ("quote",),
+) -> List[GeneratedFile]:
+    """대학명+등급코드로 선택한 서류들을 한 번에 만들어 파일 경로 목록을 반환한다.
 
     Parameters
     ----------
@@ -32,20 +45,31 @@ def generate(
     code       : 한 견적서용 등급코드 (예: 'K_P_12+U_B')
     out_dir    : 출력 폴더
     issue_date : 발급일자 (기본 오늘)
-    formats    : 'hwp', 'pdf' 중 원하는 것
+    formats    : 'hwp', 'pdf' 중 원하는 것 (서류가 지원하는 형식만 실제로 생성됨)
+    doc_types  : documents.DOCUMENT_TYPES 의 키 목록 (예: ['quote', 'transaction_statement'])
     """
     quote = build_quote(university, code, issue_date)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    stem = f"견적서_{_safe(university)}_{_safe(code)}_{quote.issue_date:%Y%m%d}"
-    created: List[Path] = []
-
     fmts = {f.lower() for f in formats}
-    if "hwp" in fmts:
-        created.append(render_hwp(quote, out_dir / f"{stem}.hwp"))
-    if "pdf" in fmts:
-        created.append(render_pdf(quote, out_dir / f"{stem}.pdf"))
+    created: List[GeneratedFile] = []
+
+    for doc_key in doc_types:
+        if doc_key not in DOCUMENT_TYPES:
+            valid = ", ".join(DOCUMENT_TYPES)
+            raise ValueError(f"알 수 없는 서류 종류 '{doc_key}' (가능: {valid})")
+        doc_type = DOCUMENT_TYPES[doc_key]
+        stem = f"{doc_type.label}_{_safe(university)}_{_safe(code)}_{quote.issue_date:%Y%m%d}"
+
+        if "hwp" in fmts:
+            tpl = template_path(doc_type)
+            path = render_hwp(quote, out_dir / f"{stem}.hwp", template=tpl)
+            created.append(GeneratedFile(doc_type.label, path))
+        if "pdf" in fmts and doc_type.supports_pdf:
+            path = render_pdf(quote, out_dir / f"{stem}.pdf")
+            created.append(GeneratedFile(doc_type.label, path))
+
     return created
 
 

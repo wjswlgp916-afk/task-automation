@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>견적서 생성 · 성균관대학교 산학협력단</title>
+<title>서류 생성 · 성균관대학교 산학협력단</title>
 <style>
   :root { --line:#e2e2e6; --ink:#1a1a1a; --muted:#666; --brand:#0b5; --brand2:#093; --bg:#f6f7f9; }
   * { box-sizing: border-box; }
@@ -40,7 +40,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>견적서 생성기</h1>
+  <h1>서류 생성기</h1>
   <div class="sub">성균관대학교 산학협력단 · K-NSSE / UICA · 프리미어 {{ premier_price }}원 · 부가서비스 각 {{ addon_price }}원 (VAT 포함)</div>
 
   {% if errors %}
@@ -59,6 +59,20 @@
           <label>발급일자</label>
           <input type="date" name="date" value="{{ (form.date if form and form.date else today) }}">
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label style="font-weight:600;">만들 서류 선택</label>
+      <div class="muted" style="margin:2px 0 14px;">같은 대학명·등급으로 여러 서류를 한 번에 만들 수 있습니다.</div>
+      <div class="grade" style="flex-wrap:wrap;">
+        {% for d in doc_types %}
+        <span class="inline">
+          <input class="chk" type="checkbox" name="doc_{{ d.key }}" id="doc_{{ d.key }}"
+                 {% if loop.first %}checked{% endif %}>
+          <label for="doc_{{ d.key }}">{{ d.label }}{% if not d.supports_pdf %} <span class="muted">(HWP만)</span>{% endif %}</label>
+        </span>
+        {% endfor %}
       </div>
     </div>
 
@@ -103,13 +117,14 @@
 
     <div class="card">
       <label style="font-weight:600;">출력 형식</label>
-      <div class="grade" style="margin-top:8px;">
+      <div class="muted" style="margin:2px 0 8px;">PDF 는 지원하는 서류만 생성됩니다.</div>
+      <div class="grade">
         <span class="inline"><input class="chk" type="checkbox" name="fmt_hwp" checked><label>HWP (한글)</label></span>
         <span class="inline"><input class="chk" type="checkbox" name="fmt_pdf" checked><label>PDF</label></span>
       </div>
     </div>
 
-    <button class="btn" type="submit">견적서 생성</button>
+    <button class="btn" type="submit">서류 생성</button>
   </form>
 </div>
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>견적서 생성 완료 · {{ university }}</title>
+<title>서류 생성 완료 · {{ university }}</title>
 <style>
   * { box-sizing:border-box; }
   body { font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif; margin:0; background:#f6f7f9; color:#1a1a1a; }
@@ -28,7 +28,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>✅ 견적서 생성 완료</h1>
+  <h1>✅ 서류 생성 완료</h1>
   <div class="sub">{{ university }} · {{ issue_date.strftime('%Y년 %m월 %d일') }}</div>
 
   {% for quote, files in results %}
@@ -53,13 +53,13 @@
     </table>
     <div class="dls">
       {% for file in files %}
-      <a class="dl {{ 'pdf' if file.kind=='PDF' else '' }}" href="{{ file.url }}">⬇ {{ file.kind }} 다운로드</a>
+      <a class="dl {{ 'pdf' if file.kind=='PDF' else '' }}" href="{{ file.url }}">⬇ {{ file.label }} ({{ file.kind }})</a>
       {% endfor %}
     </div>
   </div>
   {% endfor %}
 
-  <a class="back" href="{{ url_for('index') }}">← 새 견적서 만들기</a>
+  <a class="back" href="{{ url_for('index') }}">← 새 서류 만들기</a>
 </div>
 </body>
 </html>

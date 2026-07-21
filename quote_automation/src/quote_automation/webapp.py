@@ -26,6 +26,7 @@ from flask import (
 )
 
 from .catalog import CATALOG, PREMIER_BASE_PRICE, ADDON_PRICE
+from .documents import DOCUMENT_TYPES
 from .engine import build_quote, Quote, QuoteError
 from .generator import generate
 
@@ -93,12 +94,21 @@ def _tool_view():
     return out
 
 
+def _doc_type_view():
+    """템플릿에 넘길 서류 종류 목록."""
+    return [
+        {"key": key, "label": doc.label, "supports_pdf": doc.supports_pdf}
+        for key, doc in DOCUMENT_TYPES.items()
+    ]
+
+
 @app.route("/")
 @require_password
 def index():
     return render_template(
         "index.html",
         tools=_tool_view(),
+        doc_types=_doc_type_view(),
         today=date.today().isoformat(),
         premier_price=f"{PREMIER_BASE_PRICE:,}",
         addon_price=f"{ADDON_PRICE:,}",
@@ -136,6 +146,7 @@ def do_generate():
         issue_date = date.today()
 
     formats = [x for x in ("hwp", "pdf") if f.get(f"fmt_{x}")] or ["hwp", "pdf"]
+    doc_types = [d for d in DOCUMENT_TYPES if f.get(f"doc_{d}")] or ["quote"]
 
     codes = [c for c in (_code_for_tool("K", f), _code_for_tool("U", f)) if c]
     combine = f.get("combine", "together")
@@ -161,11 +172,12 @@ def do_generate():
         try:
             for code in quote_codes:
                 quote = build_quote(university, code, issue_date)
-                paths = generate(university, code, out_dir, issue_date, formats)
-                files = [{"name": p.name,
-                          "kind": p.suffix.lstrip(".").upper(),
-                          "url": url_for("download", token=token, name=p.name)}
-                         for p in paths]
+                generated = generate(university, code, out_dir, issue_date, formats, doc_types)
+                files = [{"name": gf.path.name,
+                          "kind": gf.path.suffix.lstrip(".").upper(),
+                          "label": gf.doc_label,
+                          "url": url_for("download", token=token, name=gf.path.name)}
+                         for gf in generated]
                 results.append((quote, files))
         except QuoteError as e:
             errors.append(str(e))
@@ -174,7 +186,8 @@ def do_generate():
 
     if errors:
         return render_template(
-            "index.html", tools=_tool_view(), today=issue_date.isoformat(),
+            "index.html", tools=_tool_view(), doc_types=_doc_type_view(),
+            today=issue_date.isoformat(),
             premier_price=f"{PREMIER_BASE_PRICE:,}", addon_price=f"{ADDON_PRICE:,}",
             errors=errors, form=f,
         ), 400

@@ -37,8 +37,9 @@ def test_healthz_open(client):
 
 def test_index_renders_tools(client):
     html = client.get("/", headers=_auth()).get_data(as_text=True)
-    assert "견적서 생성기" in html
+    assert "서류 생성기" in html
     assert "K-NSSE" in html and "UICA" in html
+    assert "거래명세서" in html
 
 
 def test_generate_combined(client):
@@ -64,6 +65,21 @@ def test_generate_separate(client):
     html = r.get_data(as_text=True)
     assert r.status_code == 200
     assert html.count("/download/") == 4      # 두 견적서 × (HWP+PDF)
+
+
+def test_generate_multiple_doc_types(client):
+    # 견적서(HWP+PDF) + 거래명세서(HWP만) 를 동시에 선택
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "서원대학교", "date": "2026-07-21",
+        "K_include": "on", "K_grade": "P",
+        "doc_quote": "on", "doc_transaction_statement": "on",
+        "fmt_hwp": "on", "fmt_pdf": "on",
+    })
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert html.count("/download/") == 3   # 견적서 HWP+PDF(2) + 거래명세서 HWP(1)
+    assert "거래명세서" in html
+    assert "견적서" in html
 
 
 def test_generate_validation_error(client):

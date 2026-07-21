@@ -78,6 +78,19 @@ APP_PASSWORD=원하는비밀번호 python -m quote_automation.webapp
 - **한 견적서에 두 도구**를 넣으려면 `+` 로 결합: `K_P_12+U_B`
 - **두 도구지만 견적서를 따로 2장** 받으려면 코드를 각각 입력 (아래 CLI 참고)
 
+### 서류 종류 (견적서 · 거래명세서 …)
+
+대학명·등급코드·발급일자가 같으면 **여러 서류를 한 번에** 만들 수 있다.
+현재 등록된 서류:
+
+| 서류 | 형식 | 비고 |
+|------|------|------|
+| 견적서 (`quote`) | HWP + PDF | 기본값 |
+| 거래명세서 (`transaction_statement`) | HWP만 | 견적서와 표 구조가 동일한 원본 양식, 제목만 다름 |
+
+새 서류(과업지시서·대금청구서 등)를 추가할 때는 `documents.py` 의
+`DOCUMENT_TYPES` 에 항목 하나만 등록하면 CLI·웹 대시보드에 자동으로 나타난다.
+
 ---
 
 ## 2. 설치
@@ -106,11 +119,14 @@ quote-gen --univ OO대학교 --code K_P_2 --code U_B
 # 발급일자 지정 (기본은 오늘), PDF 만 생성
 quote-gen --univ OO대학교 --code U_P --date 2026-07-21 --format pdf
 
-# 사용 가능한 등급 코드 전체 보기
+# 견적서 + 거래명세서 동시 생성 (같은 대학명·등급코드 공유)
+quote-gen --univ 서원대학교 --code K_P_12+U_B --doctype quote --doctype transaction_statement
+
+# 사용 가능한 등급 코드 · 서류 종류 전체 보기
 quote-gen --list
 ```
 
-생성 파일: `output/견적서_<대학명>_<코드>_<날짜>.hwp` / `.pdf`
+생성 파일: `output/<서류명>_<대학명>_<코드>_<날짜>.hwp` / `.pdf`
 
 > `pip install` 없이 바로 쓰려면: `PYTHONPATH=src python -m quote_automation --univ ... --code ...`
 
@@ -120,9 +136,12 @@ quote-gen --list
 from datetime import date
 from quote_automation.generator import generate
 
-paths = generate("서원대학교", "K_P_12+U_B",
+files = generate("서원대학교", "K_P_12+U_B",
                  out_dir="output", issue_date=date(2026, 7, 21),
-                 formats=["hwp", "pdf"])
+                 formats=["hwp", "pdf"],
+                 doc_types=["quote", "transaction_statement"])
+for gf in files:
+    print(gf.doc_label, gf.path)   # 예: 견적서 output/견적서_....hwp
 ```
 
 ---
@@ -132,15 +151,17 @@ paths = generate("서원대학교", "K_P_12+U_B",
 ```
 src/quote_automation/
   catalog.py      회사정보·설문도구·부가서비스·가격  ← 설정은 여기만 고치면 됨
+  documents.py    서류 종류 레지스트리 (견적서·거래명세서 …)  ← 서류 추가는 여기만
   korean_num.py   금액 → 한글 표기 (예: 삼백삼십만 원정)
   engine.py       등급코드 파싱 → 견적 데이터(품목/합계 계산)
   pdf_writer.py   PDF 렌더링 (reportlab, 양식 재현)
-  hwp_writer.py   HWP 생성 (원본 양식 편집)
+  hwp_writer.py   HWP 생성 (원본 양식 편집, 서류별 템플릿 지원)
   cfbf.py         HWP 컨테이너(OLE 복합문서) 리더/라이터
-  generator.py    고수준 API (HWP+PDF 함께)
+  generator.py    고수준 API (여러 서류를 한 번에 HWP/PDF 로)
   cli.py          명령줄 인터페이스
-  templates/quote_template.hwp   원본 견적서 양식
-tests/            엔진·HWP 구조 검증 테스트
+  webapp.py       웹 대시보드 (Flask)
+  templates/      원본 서류 양식들 (quote_template.hwp, transaction_statement_template.hwp …)
+tests/            엔진·HWP 구조·문서 레지스트리 검증 테스트
 ```
 
 ### 서비스/가격을 바꾸려면
@@ -172,15 +193,21 @@ tests/            엔진·HWP 구조 검증 테스트
 
 ## 6. 다음 단계 (확장 아이디어)
 
-현재는 "등급코드 입력 → 생성"(웹 대시보드 / CLI) 단계입니다. 이후 확장 방향:
+현재는 "대학+등급코드 입력 → 서류 선택 → 생성"(웹 대시보드 / CLI) 단계입니다.
+이후 확장 방향:
 
-1. **노션 연동** — 노션 DB에서 각 대학의 신청등급 태그를 읽어 일괄 생성하거나,
+1. **다른 서류 추가** — 과업지시서·대금청구서·독점공급확인서·보안확약서·
+   수의계약확인서 등. 이들은 대학명·날짜 외에 본문 여러 곳에 대학명이
+   섞여 있거나(예: "◯ OO대학교 학부교육 실태조사...") 등급에 따라 문단을
+   조건부로 지우는 로직이 필요해, `documents.py` 등록 + `hwp_writer.py` 의
+   범용 치환 유틸리티 확장이 함께 필요합니다.
+2. **노션 연동** — 노션 DB에서 각 대학의 신청등급 태그를 읽어 일괄 생성하거나,
    대시보드에 "노션에서 불러오기" 버튼을 추가. 신청등급 태그(K_P_12 등)가 이미
    이 도구의 등급코드와 같은 형식이라 매끄럽게 붙습니다.
    `generator.generate()` 를 대학·코드 목록으로 반복 호출하면 됩니다.
    - 주의: 대상 노션 DB가 **회사(팀) 워크스페이스**에 있으면, 그 워크스페이스에
      노션 통합(Integration) 토큰을 발급하고 DB를 공유해야 합니다.
-2. **네이버 메일 연동** — 요청 메일 파싱 → 노션 자동 정리.
+3. **네이버 메일 연동** — 요청 메일 파싱 → 노션 자동 정리.
 
 ---
 

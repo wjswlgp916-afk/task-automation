@@ -20,6 +20,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .catalog import CATALOG, PREMIER_BASE_PRICE, ADDON_PRICE
+from .documents import DOCUMENT_TYPES
 from .engine import build_quote, QuoteError
 from .generator import generate, summarize
 
@@ -43,6 +44,12 @@ def _print_catalog() -> None:
             print(f"    {tcode}_P_{num}       + {svc} (+{ADDON_PRICE:,}원)")
     print("\n조합 예:  K_P_12+U_B  (한 장에 두 도구)")
 
+    print("\n사용 가능한 서류 종류 (--doctype)")
+    print("=" * 50)
+    for key, doc in DOCUMENT_TYPES.items():
+        fmt = "HWP+PDF" if doc.supports_pdf else "HWP"
+        print(f"    {key:24s} {doc.label}  ({fmt})")
+
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
@@ -59,7 +66,10 @@ def main(argv=None) -> int:
     p.add_argument("--out", dest="out_dir", default="output", help="출력 폴더")
     p.add_argument("--format", dest="formats", action="append",
                    choices=["hwp", "pdf"], default=None,
-                   help="출력 형식 (기본: hwp,pdf 둘 다)")
+                   help="출력 형식 (기본: hwp,pdf 둘 다. 서류가 지원하는 형식만 실제 생성됨)")
+    p.add_argument("--doctype", dest="doc_types", action="append",
+                   choices=list(DOCUMENT_TYPES), default=None,
+                   help="만들 서류 종류 (여러 번 지정 가능, 기본: quote)")
     p.add_argument("--list", action="store_true", help="등급 코드 목록 출력 후 종료")
 
     args = p.parse_args(argv)
@@ -72,16 +82,18 @@ def main(argv=None) -> int:
         p.error("--univ 와 --code 는 필수입니다. (등급 코드 목록: --list)")
 
     formats = args.formats or ["hwp", "pdf"]
+    doc_types = args.doc_types or ["quote"]
 
     exit_code = 0
     for code in args.codes:
         try:
             quote = build_quote(args.university, code, args.date)
-            paths = generate(args.university, code, args.out_dir, args.date, formats)
-            print(f"\n✅ 견적서 생성 [{code}]")
+            files = generate(args.university, code, args.out_dir, args.date, formats, doc_types)
+            labels = ", ".join(DOCUMENT_TYPES[d].label for d in doc_types)
+            print(f"\n✅ 서류 생성 [{code}] ({labels})")
             print(summarize(quote))
-            for path in paths:
-                print(f"  파일  : {path}")
+            for gf in files:
+                print(f"  파일  : [{gf.doc_label}] {gf.path}")
         except QuoteError as e:
             print(f"\n❌ [{code}] 오류: {e}", file=sys.stderr)
             exit_code = 1
