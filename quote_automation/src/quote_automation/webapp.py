@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 import uuid
 import tempfile
@@ -41,17 +42,27 @@ _DL_ROOT.mkdir(parents=True, exist_ok=True)
 # --------------------------------------------------------------------------- #
 # 공용 비밀번호 (HTTP Basic Auth)
 # --------------------------------------------------------------------------- #
+def _expected_password() -> str | None:
+    """설정된 공용 비밀번호.
+
+    Render 등에서 환경변수를 붙여넣을 때 끝에 공백/줄바꿈이 섞여 들어오는
+    경우가 흔해서, 앞뒤 공백은 제거하고 비교한다.
+    """
+    pw = os.environ.get("APP_PASSWORD")
+    return pw.strip() if pw else pw
+
+
 def _check_auth(pw: str) -> bool:
-    expected = os.environ.get("APP_PASSWORD")
+    expected = _expected_password()
     if not expected:            # 비번 미설정 시 접근 허용(로컬 개발용)
         return True
-    return pw == expected
+    return hmac.compare_digest(pw or "", expected)
 
 
 def require_password(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        expected = os.environ.get("APP_PASSWORD")
+        expected = _expected_password()
         if expected:
             auth = request.authorization
             if not auth or not _check_auth(auth.password):
