@@ -166,10 +166,10 @@ def _header_table(quote: Quote, styles: dict) -> Table:
     c = COMPANY
     ceo_name = c.ceo.replace("(인)", "").strip()
     if _STAMP_PATH.exists():
-        stamp_img = Image(str(_STAMP_PATH), width=10 * mm, height=10 * mm)
+        stamp_img = Image(str(_STAMP_PATH), width=16 * mm, height=16 * mm)
         ceo_cell = Table(
             [[Paragraph(ceo_name, styles["supplier_value"]), stamp_img]],
-            colWidths=[38 * mm, 12 * mm],
+            colWidths=[32 * mm, 18 * mm],
         )
         ceo_cell.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -190,10 +190,13 @@ def _header_table(quote: Quote, styles: dict) -> Table:
         ["종목", Paragraph(c.business_item, styles["supplier_value"])],
         ["TEL", Paragraph(c.tel, styles["supplier_value"])],
     ]
+    # 대표자 행은 도장 이미지가 들어가므로 다른 행보다 넉넉하게 높이를 준다.
+    row_heights = [8.4 * mm] * len(rows)
+    row_heights[2] = 17 * mm
     supplier = Table(
         [[Paragraph(r[0], styles["supplier_label"]), r[1]] for r in rows],
         colWidths=[22 * mm, 62 * mm],
-        rowHeights=8.4 * mm,
+        rowHeights=row_heights,
     )
     supplier.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1.1, colors.black),
