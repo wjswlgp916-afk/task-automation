@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>견적서 생성 · 성균관대학교 산학협력단</title>
+<style>
+  :root { --line:#e2e2e6; --ink:#1a1a1a; --muted:#666; --brand:#0b5; --brand2:#093; --bg:#f6f7f9; }
+  * { box-sizing: border-box; }
+  body { font-family: "Malgun Gothic","맑은 고딕",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 28px 18px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:16px; }
+  label { font-size: 14px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width: 200px; }
+  input[type=text], input[type=date] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:15px; margin-top:6px; }
+  .tool { border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px; transition:.15s; }
+  .tool.on { border-color:var(--brand); background:#f3fbf6; }
+  .tool-head { display:flex; align-items:center; gap:10px; }
+  .tool-head b { font-size:15px; }
+  .tool-head .pname { color:var(--muted); font-size:12px; }
+  .opts { margin-top:12px; padding-left:26px; display:none; }
+  .tool.on .opts { display:block; }
+  .grade { display:flex; gap:16px; margin-bottom:8px; }
+  .addons { display:flex; flex-direction:column; gap:6px; }
+  .addons.dim { opacity:.4; pointer-events:none; }
+  .muted { color:var(--muted); font-size:12px; }
+  fieldset { border:1px dashed var(--line); border-radius:8px; margin:0; padding:12px 14px; }
+  legend { font-size:12px; color:var(--muted); padding:0 6px; }
+  .btn { background:var(--brand2); color:#fff; border:none; border-radius:10px; padding:14px 20px; font-size:16px; font-weight:600; cursor:pointer; width:100%; }
+  .btn:hover { background:#072; }
+  .err { background:#fff3f3; border:1px solid #f3c2c2; color:#a11; border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:14px; }
+  .err ul { margin:6px 0 0; padding-left:18px; }
+  .inline { display:flex; align-items:center; gap:7px; }
+  #combineBox { display:none; }
+  .chk { accent-color: var(--brand2); width:16px; height:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>견적서 생성기</h1>
+  <div class="sub">성균관대학교 산학협력단 · K-NSSE / UICA · 프리미어 {{ premier_price }}원 · 부가서비스 각 {{ addon_price }}원 (VAT 포함)</div>
+
+  {% if errors %}
+  <div class="err"><b>입력을 확인해주세요</b><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('do_generate') }}">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>대학명</label>
+          <input type="text" name="university" placeholder="예: 서원대학교" required
+                 value="{{ form.university if form else '' }}">
+        </div>
+        <div>
+          <label>발급일자</label>
+          <input type="date" name="date" value="{{ (form.date if form and form.date else today) }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label style="font-weight:600;">설문도구 선택</label>
+      <div class="muted" style="margin:2px 0 14px;">필요한 도구를 켜고 등급·부가서비스를 고르세요. 두 도구를 함께 켤 수도 있습니다.</div>
+
+      {% for t in tools %}
+      <div class="tool" id="tool_{{ t.code }}">
+        <div class="tool-head">
+          <input class="chk" type="checkbox" name="{{ t.code }}_include" id="{{ t.code }}_include"
+                 onchange="toggleTool('{{ t.code }}')">
+          <label for="{{ t.code }}_include"><b>{{ t.label }}</b> <span class="pname">{{ t.product }}</span></label>
+        </div>
+        <div class="opts">
+          <div class="grade">
+            <span class="inline"><input class="chk" type="radio" name="{{ t.code }}_grade" value="P" id="{{ t.code }}_P" checked onchange="toggleGrade('{{ t.code }}')"><label for="{{ t.code }}_P">프리미어</label></span>
+            <span class="inline"><input class="chk" type="radio" name="{{ t.code }}_grade" value="B" id="{{ t.code }}_B" onchange="toggleGrade('{{ t.code }}')"><label for="{{ t.code }}_B">베이직 (0원)</label></span>
+          </div>
+          {% if t.addons %}
+          <fieldset>
+            <legend>부가서비스 (프리미어만)</legend>
+            <div class="addons" id="addons_{{ t.code }}">
+              {% for a in t.addons %}
+              <span class="inline"><input class="chk" type="checkbox" name="{{ t.code }}_addon_{{ a.num }}" id="{{ t.code }}_a{{ a.num }}"><label for="{{ t.code }}_a{{ a.num }}">{{ a.name }}</label></span>
+              {% endfor %}
+            </div>
+          </fieldset>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div id="combineBox" style="margin-top:12px;">
+        <label style="font-weight:600;">두 도구 견적서를</label>
+        <div class="grade" style="margin-top:6px;">
+          <span class="inline"><input class="chk" type="radio" name="combine" value="together" checked><label>한 장에 함께</label></span>
+          <span class="inline"><input class="chk" type="radio" name="combine" value="separate"><label>따로 2장</label></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label style="font-weight:600;">출력 형식</label>
+      <div class="grade" style="margin-top:8px;">
+        <span class="inline"><input class="chk" type="checkbox" name="fmt_hwp" checked><label>HWP (한글)</label></span>
+        <span class="inline"><input class="chk" type="checkbox" name="fmt_pdf" checked><label>PDF</label></span>
+      </div>
+    </div>
+
+    <button class="btn" type="submit">견적서 생성</button>
+  </form>
+</div>
+
+<script>
+function toggleTool(c){
+  document.getElementById('tool_'+c).classList.toggle('on', document.getElementById(c+'_include').checked);
+  updateCombine();
+  toggleGrade(c);
+}
+function toggleGrade(c){
+  var addons = document.getElementById('addons_'+c);
+  if(!addons) return;
+  var isPremier = document.getElementById(c+'_P').checked;
+  addons.classList.toggle('dim', !isPremier);
+  if(!isPremier){ addons.querySelectorAll('input').forEach(function(i){ i.checked=false; }); }
+}
+function updateCombine(){
+  var both = document.getElementById('K_include').checked && document.getElementById('U_include').checked;
+  document.getElementById('combineBox').style.display = both ? 'block' : 'none';
+}
+</script>
+</body>
+</html>

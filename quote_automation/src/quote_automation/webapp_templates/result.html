@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>견적서 생성 완료 · {{ university }}</title>
+<style>
+  * { box-sizing:border-box; }
+  body { font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif; margin:0; background:#f6f7f9; color:#1a1a1a; }
+  .wrap { max-width:780px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#666; font-size:13px; margin-bottom:22px; }
+  .card { background:#fff; border:1px solid #e2e2e6; border-radius:12px; padding:20px; margin-bottom:16px; }
+  .q-total { font-size:20px; font-weight:700; color:#093; }
+  .q-kor { color:#666; font-size:14px; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13px; }
+  th, td { border:1px solid #e2e2e6; padding:7px 9px; text-align:center; }
+  th { background:#f3f4f6; }
+  td.name { text-align:left; }
+  td.num { text-align:right; }
+  .dls { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  .dl { display:inline-block; background:#093; color:#fff; text-decoration:none; padding:10px 18px; border-radius:9px; font-weight:600; font-size:14px; }
+  .dl.pdf { background:#b4341f; }
+  .dl:hover { opacity:.9; }
+  .back { display:inline-block; margin-top:8px; color:#093; text-decoration:none; font-weight:600; }
+  .addon td.name { padding-left:22px; color:#444; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>✅ 견적서 생성 완료</h1>
+  <div class="sub">{{ university }} · {{ issue_date.strftime('%Y년 %m월 %d일') }}</div>
+
+  {% for quote, files in results %}
+  <div class="card">
+    <div>
+      <span class="q-total">합계 {{ '{:,}'.format(quote.grand_total) }}원</span>
+      <span class="q-kor">({{ quote.korean_amount }})</span>
+    </div>
+    <table>
+      <thead><tr><th>품명</th><th>규격</th><th>수량</th><th>공급가액</th><th>세액</th></tr></thead>
+      <tbody>
+        {% for it in quote.items %}
+        <tr class="{{ 'addon' if it.kind=='addon' else '' }}">
+          <td class="name">{{ it.name }}</td>
+          <td>{{ it.spec }}</td>
+          <td>{{ it.qty }}</td>
+          <td class="num">{{ '{:,}'.format(it.supply) }}</td>
+          <td class="num">{{ '{:,}'.format(it.vat) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="dls">
+      {% for file in files %}
+      <a class="dl {{ 'pdf' if file.kind=='PDF' else '' }}" href="{{ file.url }}">⬇ {{ file.kind }} 다운로드</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <a class="back" href="{{ url_for('index') }}">← 새 견적서 만들기</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Render.com 배포 설정 (Blueprint)
+# GitHub 저장소를 Render 에 연결하면 이 파일을 읽어 자동 배포한다.
+#   1) https://render.com 가입 (GitHub 로그인)
+#   2) New + → Blueprint → 이 저장소 선택
+#   3) APP_PASSWORD 값(공용 비밀번호)을 입력하고 배포
+services:
+  - type: web
+    name: quote-automation
+    runtime: docker
+    plan: free
+    dockerfilePath: quote_automation/Dockerfile
+    dockerContext: quote_automation
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_PASSWORD
+        sync: false          # 배포 시 대시보드에서 직접 입력 (셋이 공유할 비밀번호)
