@@ -5,7 +5,7 @@ FROM python:3.11-slim
 
 # 한글 폰트 설치 (PDF 렌더링에 필요)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-nanum \
+    && apt-get install -y --no-install-recommends fontconfig fonts-nanum \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f
 
