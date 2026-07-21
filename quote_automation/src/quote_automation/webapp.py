@@ -57,7 +57,7 @@ def require_password(f):
             if not auth or not _check_auth(auth.password):
                 return Response(
                     "비밀번호가 필요합니다.", 401,
-                    {"WWW-Authenticate": 'Basic realm="견적서 대시보드"'},
+                    {"WWW-Authenticate": 'Basic realm="Quote Automation"'},
                 )
         return f(*args, **kwargs)
     return wrapper
