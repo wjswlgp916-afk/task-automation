@@ -33,6 +33,7 @@ PARA_LINE_SEG = 69
 CTRL_HEADER = 71
 LIST_HEADER = 72
 TABLE = 77
+MEMO_LIST = 93
 
 PARA_BREAK = 0x000D          # 문단 끝 제어문자
 
@@ -175,9 +176,15 @@ def strip_memo_controls(records: List[Record]) -> int:
     섞여 있으면, 그 메모가 걸린 문단을 포함하는 모든 산출물에 매번
     따라오고 — 한글에서 "메모를 읽는 중 오류" 경고까지 띄운다.
 
-    메모는 해당 문단을 필드(누름틀)처럼 감싸는 구조이므로, 문단을 순수
-    텍스트로 정리(제어문자 제거)하고 메모 컨트롤 레코드 자체는 삭제한다.
-    제거한 메모 개수를 반환한다 (없으면 0, 안전하게 아무 일도 하지 않음).
+    메모는 두 부분으로 이루어져 있다.
+      1. 본문 문단을 필드(누름틀)처럼 감싸는 CTRL_HEADER(id="knu%") — 문단을
+         순수 텍스트로 정리(제어문자 제거)하고 이 레코드 자체를 삭제한다.
+      2. 문서 끝쪽에 별도로 붙는 메모 내용 자체(MEMO_LIST 레코드 + 그
+         안의 LIST_HEADER/문단들, 즉 메모창에 보이는 노란 메모 텍스트) —
+         이것도 통째로 삭제해야 한다. 1번만 지우고 이걸 남겨두면, 앵커는
+         없는데 메모 목록만 남는 불일치 상태가 되어 여전히 같은 경고가 뜬다.
+
+    제거한 메모(앵커) 개수를 반환한다 (없으면 0, 안전하게 아무 일도 하지 않음).
     """
     remove_idx: List[int] = []
     for i, r in enumerate(records):
@@ -194,9 +201,27 @@ def strip_memo_controls(records: List[Record]) -> int:
                     break
                 if records[j].tag == PARA_HEADER:
                     break
+    removed = len(remove_idx)
     for i in sorted(remove_idx, reverse=True):
         del records[i]
-    return len(remove_idx)
+
+    # MEMO_LIST 블록(메모 내용) 통째 제거.
+    kept: List[Record] = []
+    i = 0
+    n = len(records)
+    while i < n:
+        r = records[i]
+        if r.tag == MEMO_LIST:
+            base_level = r.level
+            j = i + 1
+            while j < n and records[j].tag != MEMO_LIST and records[j].level >= base_level:
+                j += 1
+            i = j
+            continue
+        kept.append(r)
+        i += 1
+    records[:] = kept
+    return removed
 
 
 # --------------------------------------------------------------------------- #

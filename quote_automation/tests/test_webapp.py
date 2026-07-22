@@ -142,6 +142,37 @@ def test_inspection_basic_only_shows_error(client):
     assert "베이직" in r.get_data(as_text=True)
 
 
+def test_completion_report_extra_fields_shown_with_defaults(client):
+    html = client.get("/", headers=_auth()).get_data(as_text=True)
+    assert "완료계" in html
+    assert 'name="extra_contract_date"' in html
+    assert 'value="2026-09-01"' in html      # 착수년월일 기본값
+    assert 'value="2027-01-31"' in html      # 완료기한 기본값
+    assert 'value="2026-12-18"' in html      # 완료년월일 기본값
+
+
+def test_completion_report_requires_contract_date(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P",
+        "doc_completion_report": "on", "fmt_hwp": "on",
+    })
+    assert r.status_code == 400
+    assert "계약년월일" in r.get_data(as_text=True)
+
+
+def test_completion_report_generates_with_dates(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P",
+        "doc_completion_report": "on",
+        "extra_contract_date": "2026-03-10",
+        "fmt_hwp": "on", "fmt_pdf": "on",
+    })
+    assert r.status_code == 200
+    assert r.get_data(as_text=True).count("/download/") == 2   # 완료계 HWP+PDF
+
+
 def test_generate_multiple_doc_types(client):
     # 견적서(HWP+PDF) + 거래명세서(HWP+PDF) 를 동시에 선택
     r = client.post("/generate", headers=_auth(), data={

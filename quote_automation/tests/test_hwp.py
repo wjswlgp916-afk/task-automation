@@ -132,6 +132,17 @@ def test_no_leftover_memo_controls(tmp_path, code):
     assert memos == []
 
 
+@pytest.mark.parametrize("code", ALL_CODES)
+def test_no_leftover_memo_lists(tmp_path, code):
+    """메모 앵커(knu% CTRL_HEADER)뿐 아니라, 메모 내용 자체를 담는
+    MEMO_LIST(tag 93) 레코드도 통째로 남아 있으면 앵커 없는 메모 목록만
+    남는 불일치 상태가 되어 여전히 같은 경고가 뜬다. 하나도 없어야 한다."""
+    q = build_quote("테스트대학교", code, date(2026, 7, 21))
+    out = render_hwp(q, tmp_path / "q.hwp")
+    recs, _ = _table_rows(out)
+    assert not any(r.tag == 93 for r in recs)
+
+
 def test_memo_removal_preserves_visible_text(tmp_path):
     """메모를 제거해도 그 문단의 눈에 보이는 텍스트(품명 헤더 등)는 그대로."""
     q = build_quote("테스트대학교", "K_P", date(2026, 7, 21))
