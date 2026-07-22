@@ -14,12 +14,19 @@ from quote_automation.documents import (  # noqa: E402
 )
 from quote_automation.engine import build_quote  # noqa: E402
 from quote_automation.generator import generate, GeneratedFile  # noqa: E402
-from quote_automation.hwp_writer import render_hwp, parse_records, text_of  # noqa: E402
+from quote_automation.hwp_writer import (  # noqa: E402
+    render_hwp, parse_records, text_of, _split_cells, TABLE,
+)
 from quote_automation import cfbf  # noqa: E402
 
 
 def _guaranty_extra():
     return coerce_extra(["guaranty"], {"contract_start": "2026-09-01"})
+
+
+def _inspection_extra():
+    return coerce_extra(["inspection"],
+                         {"work_start": "2026-09-01", "work_end": "2026-12-31"})
 
 ALL_CODES = [
     "K_B", "K_P", "K_P_1", "K_P_2", "K_P_12",
@@ -226,3 +233,120 @@ def test_quote_template_still_default_when_doctype_not_specified(tmp_path):
     files = generate("테스트대학교", "U_P", tmp_path, date(2026, 7, 21))
     assert len(files) == 2  # 기본값 quote: HWP + PDF
     assert all(gf.doc_label == "견적서" for gf in files)
+
+
+# --------------------------------------------------------------------------- #
+# 검수확인서
+# --------------------------------------------------------------------------- #
+def test_inspection_registered_with_extra_fields():
+    assert "inspection" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["inspection"]
+    assert doc.label == "검수확인서"
+    assert doc.supports_pdf is True
+    keys = [f.key for f in doc.extra_fields]
+    assert keys == ["work_start", "work_end"]
+    assert all(f.required for f in doc.extra_fields)   # 둘 다 필수, 기본값 없음
+
+
+def _inspection_table_rows(out_path):
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out_path))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    ti = [i for i, r in enumerate(recs) if r.tag == TABLE][0]
+    level = recs[ti].level
+    j = ti + 1
+    while j < len(recs) and recs[j].level >= level:
+        j += 1
+    cells = _split_cells(recs[ti + 1:j], level)
+    rows = {}
+    for c in cells:
+        rows.setdefault(c.row(), []).append(c)
+    return recs, rows
+
+
+@pytest.mark.parametrize("code,expect_subject,expect_rows", [
+    # (코드, 기대 용역명, {(row): (colcount, 첫 텍스트)})
+    ("K_P_12+U_P_1", "학부교육의 질과 성과 진단 및 분석", 6),  # header+3(K)+2(U)=6
+    ("K_P_2", "학부교육의 질과 성과 진단 및 분석", 3),          # header+base+addon2=3
+    ("U_P", "대학 혁신역량 진단 및 분석", 2),                   # header+base=2
+])
+def test_inspection_hwp_table_matches_selection(tmp_path, code, expect_subject, expect_rows):
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", code, date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=_inspection_extra())
+
+    recs, rows = _inspection_table_rows(out)
+    assert len(rows) == expect_rows
+
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert f"용    역    명 : {expect_subject}" in joined
+    assert "2026년 9월 1일 ~ 2026년 12월 31일" in joined
+    assert "2026년  8월  15일" in joined       # 발급일자(작업기간과 별개)
+    assert "호서대학교 귀하" in joined
+
+
+def test_inspection_hwp_rowspan_matches_addon_count(tmp_path):
+    # K_P_2: 단과대학별(addon1)은 빠지고 base+Peer(addon2)만 -> rowspan 2
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_P_2", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=_inspection_extra())
+    _, rows = _inspection_table_rows(out)
+    label_cell = [c for c in rows[1] if c.col() == 0][0]
+    assert label_cell.rowspan() == 2
+    assert "단과대학별 비교분석" not in " ".join(c.first_text() for r in rows.values() for c in r)
+
+
+def test_inspection_addon1_only_skips_addon2(tmp_path):
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_P_1", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=_inspection_extra())
+    _, rows = _inspection_table_rows(out)
+    texts = [c.first_text() for r in rows.values() for c in r]
+    assert "단과대학별 비교분석" in texts
+    assert "Peer Benchmarking" not in texts
+
+
+def test_inspection_basic_only_raises(tmp_path):
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_B", date(2026, 8, 15))
+    with pytest.raises(Exception, match="베이직"):
+        doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=_inspection_extra())
+
+
+def test_inspection_mixed_basic_and_premium_only_shows_premium(tmp_path):
+    # K 베이직 + U 프리미어 결합 -> 표에는 UICA 만 남아야 한다
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_B+U_P_1", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=_inspection_extra())
+    _, rows = _inspection_table_rows(out)
+    texts = [c.first_text() for r in rows.values() for c in r]
+    assert "대학 혁신역량 진단조사(UICA)" in texts
+    assert "학부교육 실태조사(K-NSSE)" not in texts
+
+
+def test_inspection_missing_work_dates_raises(tmp_path):
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    with pytest.raises(Exception):
+        doc.render_hwp(q, tmp_path / "insp.hwp", None, extra=None)
+
+
+def test_inspection_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["inspection"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "insp.pdf", extra=_inspection_extra())
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "검 수 확 인 서" in text
+    assert "단과대학별 비교분석" in text
+    assert "Peer Benchmarking" in text
+    assert "호서대학교 귀하" in text
+
+
+def test_generate_inspection_needs_extra(tmp_path):
+    with pytest.raises(Exception):
+        generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                 doc_types=["inspection"], extra=None)
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     doc_types=["inspection"], extra=_inspection_extra())
+    assert len(files) == 2 and all(gf.path.is_file() for gf in files)

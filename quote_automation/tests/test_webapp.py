@@ -99,6 +99,49 @@ def test_guaranty_generates_with_dates(client):
     assert r.get_data(as_text=True).count("/download/") == 2   # 각서 HWP+PDF
 
 
+def test_inspection_extra_fields_shown_no_defaults(client):
+    html = client.get("/", headers=_auth()).get_data(as_text=True)
+    assert "검수확인서" in html
+    assert 'name="extra_work_start"' in html
+    assert 'name="extra_work_end"' in html
+
+
+def test_inspection_requires_work_dates(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P", "K_addon_2": "on",
+        "doc_inspection": "on", "fmt_hwp": "on",
+    })
+    assert r.status_code == 400
+    assert "작업 시작일" in r.get_data(as_text=True)
+
+
+def test_inspection_generates_with_dates(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P", "K_addon_2": "on",
+        "doc_inspection": "on",
+        "extra_work_start": "2026-09-01",
+        "extra_work_end": "2026-12-31",
+        "fmt_hwp": "on", "fmt_pdf": "on",
+    })
+    assert r.status_code == 200
+    assert r.get_data(as_text=True).count("/download/") == 2   # 검수확인서 HWP+PDF
+
+
+def test_inspection_basic_only_shows_error(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "B",
+        "doc_inspection": "on",
+        "extra_work_start": "2026-09-01",
+        "extra_work_end": "2026-12-31",
+        "fmt_hwp": "on",
+    })
+    assert r.status_code == 400
+    assert "베이직" in r.get_data(as_text=True)
+
+
 def test_generate_multiple_doc_types(client):
     # 견적서(HWP+PDF) + 거래명세서(HWP+PDF) 를 동시에 선택
     r = client.post("/generate", headers=_auth(), data={

@@ -21,7 +21,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import guaranty_writer, hwp_writer, invoice_writer, pdf_writer
+from . import guaranty_writer, hwp_writer, inspection_writer, invoice_writer, pdf_writer
 from .engine import Quote
 
 
@@ -88,6 +88,19 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
                        help="보통 고정 (필요시 수정)"),
             ExtraField("commencement", "착수일", "date", default="2026-09-01",
                        help="보통 고정 (필요시 수정)"),
+        ),
+    ),
+    "inspection": DocumentType(
+        key="inspection",
+        label="검수확인서",
+        render_hwp=inspection_writer.render_hwp,
+        render_pdf=inspection_writer.render_pdf,
+        template_filename="inspection_template.hwp",
+        extra_fields=(
+            ExtraField("work_start", "작업 시작일", "date", required=True,
+                       help="검수확인서에 표시되는 작업기간 시작일"),
+            ExtraField("work_end", "작업 종료일", "date", required=True,
+                       help="검수확인서에 표시되는 작업기간 종료일"),
         ),
     ),
 }
