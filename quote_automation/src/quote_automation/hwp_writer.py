@@ -182,9 +182,19 @@ class Cell:
     def colspan(self) -> int:
         return struct.unpack("<H", self.header.payload[12:14])[0]
 
+    def rowspan(self) -> int:
+        return struct.unpack("<H", self.header.payload[14:16])[0]
+
     def set_row(self, r: int) -> None:
         p = bytearray(self.header.payload)
         struct.pack_into("<H", p, 10, r)
+        self.header.payload = bytes(p)
+
+    def set_rowspan(self, n: int) -> None:
+        """세로 병합 칸 수를 바꾼다 (검수확인서처럼 rowspan 이 있는 표에서,
+        일부 하위 행을 지운 뒤 상위 라벨 칸의 병합 수를 실제 행 수에 맞춘다)."""
+        p = bytearray(self.header.payload)
+        struct.pack_into("<H", p, 14, n)
         self.header.payload = bytes(p)
 
     def paragraphs(self) -> List[Tuple[Record, Record]]:
