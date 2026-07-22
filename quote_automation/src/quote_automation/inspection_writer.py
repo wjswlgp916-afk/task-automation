@@ -43,6 +43,7 @@ from .hwp_writer import (
     parse_records,
     serialize_records,
     replace_literal_everywhere,
+    strip_memo_controls,
     _split_cells,
 )
 
@@ -186,6 +187,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     raw = sm[("BodyText", "Section0")]
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
+    strip_memo_controls(records)
 
     def rep(old, new, what):
         if replace_literal_everywhere(records, old, new) != 1:

@@ -118,3 +118,24 @@ def test_kbasic_product_name_changed(tmp_path):
     )
     # 베이직 행의 품명이 K-NSSE 로 바뀌어 있어야 함 (원본은 UICA)
     assert "K-NSSE" in joined and "BASIC" in joined
+
+
+@pytest.mark.parametrize("code", ALL_CODES)
+def test_no_leftover_memo_controls(tmp_path, code):
+    """원본 quote_template.hwp 에 남아있던 한글 메모(코멘트)가 출력물에
+    남으면 한글에서 '메모를 읽는 중 오류' 경고가 뜨므로, 생성물에는
+    메모 컨트롤이 하나도 없어야 한다."""
+    q = build_quote("테스트대학교", code, date(2026, 7, 21))
+    out = render_hwp(q, tmp_path / "q.hwp")
+    recs, _ = _table_rows(out)
+    memos = [r for r in recs if r.tag == 71 and r.payload[:4] == b"knu%"]
+    assert memos == []
+
+
+def test_memo_removal_preserves_visible_text(tmp_path):
+    """메모를 제거해도 그 문단의 눈에 보이는 텍스트(품명 헤더 등)는 그대로."""
+    q = build_quote("테스트대학교", "K_P", date(2026, 7, 21))
+    out = render_hwp(q, tmp_path / "q.hwp")
+    recs, _ = _table_rows(out)
+    texts = [text_of(r) for r in recs if r.tag == 67]
+    assert "품       명" in texts

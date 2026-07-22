@@ -162,6 +162,43 @@ def replace_literal_everywhere(records: List[Record], old: str, new: str) -> int
     return count
 
 
+# 한글 "메모(코멘트)" 컨트롤의 4바이트 식별자. 메모는 해당 문단을 필드처럼
+# 감싸는 형태로 저장되며, 이 CTRL_HEADER 안에 "MEMO/.../작성자/..." 식
+# 식별 문자열과 작성자·타임스탬프가 그대로 들어있다.
+_MEMO_CTRL_ID = b"knu%"
+
+
+def strip_memo_controls(records: List[Record]) -> int:
+    """문서에 남아있는 한글 메모(코멘트)를 찾아 제거한다.
+
+    원본 양식을 만들 때 검토용으로 남긴 메모가 지워지지 않은 채 템플릿에
+    섞여 있으면, 그 메모가 걸린 문단을 포함하는 모든 산출물에 매번
+    따라오고 — 한글에서 "메모를 읽는 중 오류" 경고까지 띄운다.
+
+    메모는 해당 문단을 필드(누름틀)처럼 감싸는 구조이므로, 문단을 순수
+    텍스트로 정리(제어문자 제거)하고 메모 컨트롤 레코드 자체는 삭제한다.
+    제거한 메모 개수를 반환한다 (없으면 0, 안전하게 아무 일도 하지 않음).
+    """
+    remove_idx: List[int] = []
+    for i, r in enumerate(records):
+        if r.tag == CTRL_HEADER and r.payload[:4] == _MEMO_CTRL_ID:
+            remove_idx.append(i)
+            for j in range(i - 1, -1, -1):
+                if records[j].tag == PARA_TEXT:
+                    hdr = _prev_para_header(records, j)
+                    if hdr:
+                        clean = text_of(records[j])
+                        set_plain_text(hdr, records[j], clean)
+                        # 필드 마스크 제거(순수 텍스트가 됐으므로)
+                        hdr.payload = hdr.payload[0:4] + b"\x00\x00\x00\x00" + hdr.payload[8:]
+                    break
+                if records[j].tag == PARA_HEADER:
+                    break
+    for i in sorted(remove_idx, reverse=True):
+        del records[i]
+    return len(remove_idx)
+
+
 # --------------------------------------------------------------------------- #
 # 셀 / 행 모델
 # --------------------------------------------------------------------------- #
@@ -306,6 +343,7 @@ def render_hwp(
     streams = cfbf.read_streams(str(template))
     records, compressed, sm = _read_section(streams)
 
+    strip_memo_controls(records)
     _edit_top_fields(records, quote)
     _remove_template_notes(records)
     _rebuild_item_table(records, quote)

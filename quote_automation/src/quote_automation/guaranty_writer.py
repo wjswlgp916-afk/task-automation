@@ -30,7 +30,9 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from . import cfbf, pdf_common
 from .catalog import COMPANY
 from .engine import Quote, subject_override
-from .hwp_writer import parse_records, serialize_records, replace_literal_everywhere
+from .hwp_writer import (
+    parse_records, serialize_records, replace_literal_everywhere, strip_memo_controls,
+)
 from .korean_num import number_to_korean_plain
 
 # 특수문자
@@ -104,6 +106,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     raw = sm[("BodyText", "Section0")]
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
+    strip_memo_controls(records)
 
     amount = quote.grand_total
     deposit = _deposit(quote)
