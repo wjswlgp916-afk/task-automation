@@ -199,7 +199,11 @@ def render_pdf(quote: Quote, out_path: str | Path, extra: Optional[dict] = None)
     story.append(Spacer(1, 16 * mm))
 
     # 제출자 블록
-    ceo_value = "구 자 춘            (인)"
+    # reportlab Paragraph 는 일반 공백을 한 칸으로 합치므로, 원본처럼 넓은
+    # 간격을 유지하려면 줄바꿈 안 되는 공백(nbsp)을 쓴다. 그래야 stringWidth
+    # 로 계산한 도장 위치도 실제 렌더링과 일치한다.
+    _NBSP = " "
+    ceo_value = "구 자 춘" + _NBSP * 10 + "(인)"
     issuer = Table(
         [
             [Paragraph("제출자", st["iss_label"]), Paragraph("상호명 :", st["iss_label"]),
