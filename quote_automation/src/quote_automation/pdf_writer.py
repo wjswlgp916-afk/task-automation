@@ -273,7 +273,7 @@ def _items_table(quote: Quote, styles: dict) -> Table:
     span_cmds.append(("SPAN", (0, total_row), (3, total_row)))
     span_cmds.append(("SPAN", (4, total_row), (5, total_row)))
 
-    col_widths = [58 * mm, 20 * mm, 12 * mm, 24 * mm, 24 * mm, 20 * mm, 16 * mm]
+    col_widths = [58 * mm, 23 * mm, 11 * mm, 23 * mm, 23 * mm, 20 * mm, 16 * mm]
     t = Table(rows, colWidths=col_widths, repeatRows=1)
     style = [
         ("FONTNAME", (0, 0), (-1, -1), _FONT),

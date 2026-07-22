@@ -14,11 +14,13 @@ from reportlab.platypus import Flowable
 # 흰 배경을 투명 처리해 붉은 인영만 남기는 색상 키 마스크 (글자 위에 겹칠 때)
 STAMP_WHITE_MASK = [230, 255, 230, 255, 230, 255]
 
-FONT = "NanumGothic"
-FONT_BOLD = "NanumGothic-Bold"
+# 원본 HWP 서류들은 본문에 '바탕'/'HY신명조'(명조·serif 계열)를 쓴다.
+# PDF 도 같은 느낌을 내도록 나눔명조(serif)를 기본 글꼴로 쓴다.
+FONT = "NanumMyeongjo"
+FONT_BOLD = "NanumMyeongjo-Bold"
 _FONT_PATHS = [
-    ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", FONT),
-    ("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", FONT_BOLD),
+    ("/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf", FONT),
+    ("/usr/share/fonts/truetype/nanum/NanumMyeongjoBold.ttf", FONT_BOLD),
 ]
 
 STAMP_PATH = Path(__file__).parent / "templates" / "stamp.png"
