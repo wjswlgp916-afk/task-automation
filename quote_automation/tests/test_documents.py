@@ -63,6 +63,8 @@ def test_transaction_statement_hwp_generates_and_validates(tmp_path, code):
     # 견적서 제목이 아니라 거래명세서 제목이어야 한다
     assert "거 래 명 세 서" in joined
     assert "견 적 서" not in joined
+    # 원본 양식에 남아있던 형광펜(하이라이트) 자국도 산출물엔 없어야 한다
+    assert not any(r.tag == 70 for r in recs)
 
 
 def test_generate_produces_both_doc_types_with_correct_formats(tmp_path):
@@ -286,6 +288,8 @@ def test_inspection_hwp_table_matches_selection(tmp_path, code, expect_subject, 
     assert "2026년 9월 1일 ~ 2026년 12월 31일" in joined
     assert "2026년  8월  15일" in joined       # 발급일자(작업기간과 별개)
     assert "호서대학교 귀하" in joined
+    # 원본 양식에 남아있던 형광펜(하이라이트) 자국도 산출물엔 없어야 한다
+    assert not any(r.tag == 70 for r in recs)
 
 
 def test_inspection_hwp_rowspan_matches_addon_count(tmp_path):
@@ -412,6 +416,17 @@ def test_completion_report_no_leftover_memo_controls(tmp_path):
     recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
     assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
     assert not any(r.tag == 93 for r in recs)
+
+
+def test_completion_report_no_leftover_highlight(tmp_path):
+    # 원본 완료계 양식은 날짜 자리들에 형광펜(노란 하이라이트)이 칠해져
+    # 있었다 (작성자가 잊지 않으려고 표시한 것) — 산출물에는 남으면 안 됨.
+    doc = DOCUMENT_TYPES["completion_report"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_completion_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    assert not any(r.tag == 70 for r in recs)
 
 
 def test_completion_report_missing_contract_date_raises(tmp_path):

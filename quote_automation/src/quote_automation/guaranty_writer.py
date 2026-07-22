@@ -32,6 +32,7 @@ from .catalog import COMPANY
 from .engine import Quote, subject_override
 from .hwp_writer import (
     parse_records, serialize_records, replace_literal_everywhere, strip_memo_controls,
+    strip_highlight_ranges,
 )
 from .korean_num import number_to_korean_plain
 
@@ -107,6 +108,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
     strip_memo_controls(records)
+    strip_highlight_ranges(records)
 
     amount = quote.grand_total
     deposit = _deposit(quote)

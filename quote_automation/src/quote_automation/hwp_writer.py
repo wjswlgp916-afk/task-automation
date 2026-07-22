@@ -30,6 +30,7 @@ PARA_HEADER = 66
 PARA_TEXT = 67
 PARA_CHAR_SHAPE = 68
 PARA_LINE_SEG = 69
+PARA_RANGE_TAG = 70
 CTRL_HEADER = 71
 LIST_HEADER = 72
 TABLE = 77
@@ -224,6 +225,21 @@ def strip_memo_controls(records: List[Record]) -> int:
     return removed
 
 
+def strip_highlight_ranges(records: List[Record]) -> int:
+    """템플릿 작성자가 "잊지 않으려고" 표시해둔 형광펜(하이라이트) 태그를 지운다.
+
+    PARA_RANGE_TAG(tag=70) 레코드는 (문단 내 시작 위치, 끝 위치, RGB 색상+종류)
+    묶음을 담아 특정 글자 구간에 형광펜을 칠한다 — 실제로 확인해 보면 색상은
+    항상 노란색(ff ff 00), 종류 바이트는 0x02 로 고정되어 있다. 이 레코드는
+    순수한 시각적 표시일 뿐 문단 텍스트·구조에는 영향을 주지 않으므로,
+    레코드를 통째로 지우면 안전하게 하이라이트만 사라진다.
+    제거한 레코드 개수를 반환한다.
+    """
+    before = len(records)
+    records[:] = [r for r in records if r.tag != PARA_RANGE_TAG]
+    return before - len(records)
+
+
 # --------------------------------------------------------------------------- #
 # 셀 / 행 모델
 # --------------------------------------------------------------------------- #
@@ -369,6 +385,7 @@ def render_hwp(
     records, compressed, sm = _read_section(streams)
 
     strip_memo_controls(records)
+    strip_highlight_ranges(records)
     _edit_top_fields(records, quote)
     _remove_template_notes(records)
     _rebuild_item_table(records, quote)

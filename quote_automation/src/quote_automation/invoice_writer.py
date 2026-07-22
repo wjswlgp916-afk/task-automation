@@ -37,6 +37,7 @@ from .hwp_writer import (
     serialize_records,
     replace_literal_everywhere,
     strip_memo_controls,
+    strip_highlight_ranges,
 )
 from .korean_num import number_to_korean_plain
 
@@ -82,6 +83,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
     strip_memo_controls(records)
+    strip_highlight_ranges(records)
 
     if replace_literal_everywhere(records, _DATE_PLACEHOLDER, _date_text(quote)) != 1:
         raise InvoiceError("템플릿에서 발급일자 자리를 찾지 못했습니다.")

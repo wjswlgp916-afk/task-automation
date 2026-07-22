@@ -143,6 +143,15 @@ def test_no_leftover_memo_lists(tmp_path, code):
     assert not any(r.tag == 93 for r in recs)
 
 
+def test_no_leftover_highlight_ranges(tmp_path):
+    """작성자가 헷갈리지 않으려고 칠해둔 형광펜(PARA_RANGE_TAG, tag 70)은
+    최종 산출물에는 필요 없으므로 하나도 남으면 안 된다."""
+    q = build_quote("테스트대학교", "K_P", date(2026, 7, 21))
+    out = render_hwp(q, tmp_path / "q.hwp")
+    recs, _ = _table_rows(out)
+    assert not any(r.tag == 70 for r in recs)
+
+
 def test_memo_removal_preserves_visible_text(tmp_path):
     """메모를 제거해도 그 문단의 눈에 보이는 텍스트(품명 헤더 등)는 그대로."""
     q = build_quote("테스트대학교", "K_P", date(2026, 7, 21))
