@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import re
 import struct
 import zlib
 from pathlib import Path
@@ -27,42 +26,12 @@ from reportlab.lib.units import mm
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, Flowable,
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image,
 )
 
-# 흰 배경을 투명 처리해 붉은 인영만 남기는 색상 키 마스크 (글자 위에 겹칠 때)
-_STAMP_WHITE_MASK = [230, 255, 230, 255, 230, 255]
-
-
-class _StampOverlay(Flowable):
-    """도장 이미지를 바로 위 줄(대표자 '(인)')에 겹쳐 찍는다.
-
-    reportlab flowable 은 겹침을 직접 지원하지 않으므로, 실제 도장보다 낮은
-    높이만 차지하고 이미지를 위쪽(이전 줄)까지 올려 그린다. 흰 배경은
-    색상 키 마스크로 투명 처리해 글자가 비쳐 보이도록 한다.
-    """
-
-    def __init__(self, path: str, size: float, x: float, overlap: float):
-        super().__init__()
-        self.path = path
-        self.size = size          # 도장 한 변 길이
-        self.x = x                # 프레임 왼쪽 기준 x
-        self.overlap = overlap    # 위 줄로 겹쳐 올라갈 높이
-
-    def wrap(self, availWidth, availHeight):
-        return (availWidth, max(0.0, self.size - self.overlap))
-
-    def draw(self):
-        # 로컬 원점(0,0)=박스 좌하단. y=0 에서 size 높이로 그리면
-        # 위쪽 overlap 만큼 이전 줄(대표자)에 겹쳐진다.
-        self.canv.drawImage(
-            self.path, self.x, 0, width=self.size, height=self.size,
-            mask=_STAMP_WHITE_MASK, preserveAspectRatio=True,
-        )
-
 from . import cfbf, pdf_common
-from .catalog import CATALOG, COMPANY
-from .engine import Quote
+from .catalog import COMPANY
+from .engine import Quote, subject_override as _subject_override
 from .hwp_writer import (
     parse_records,
     serialize_records,
@@ -85,24 +54,6 @@ def _default_template() -> Path:
     return Path(__file__).parent / "templates" / "invoice_template.hwp"
 
 
-def _short_name(tool_code: str) -> str:
-    """카탈로그의 정식 품명에서 '(K-NSSE)'/'(UICA)' 같은 괄호 표기를 뗀 건명."""
-    full = CATALOG[tool_code].product_name
-    return re.sub(r"\([^)]*\)\s*$", "", full).strip()
-
-
-def _subject_override(quote: Quote) -> Optional[str]:
-    """건명을 바꿔야 하면 새 건명을, 기본값을 유지하면 None 을 반환한다.
-
-    규칙(사용자 확정): K 단독 또는 K+U 결합이면 원본 기본값(K 문구) 유지,
-    U 단독이면 "대학 혁신역량 진단 및 분석"으로 교체.
-    """
-    tools = {code.split("_", 1)[0] for code in quote.source_codes}
-    if tools == {"U"}:
-        return _short_name("U")
-    return None
-
-
 def _amount_text(quote: Quote) -> str:
     """대금청구서 고유 표기 스타일: '금 삼백삼십만원 (\\ 3,300,000 )'."""
     kor = number_to_korean_plain(quote.grand_total)
@@ -114,8 +65,9 @@ def _date_text(quote: Quote) -> str:
     return f"{d.year}. {d.month:02d}. {d.day:02d}."
 
 
-def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = None) -> Path:
-    """대금청구서를 HWP 파일로 저장하고 경로를 반환한다."""
+def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = None,
+               extra: Optional[dict] = None) -> Path:
+    """대금청구서를 HWP 파일로 저장하고 경로를 반환한다. (extra 는 사용 안 함)"""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tpl = Path(template) if template else _default_template()
@@ -163,8 +115,8 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
 # --------------------------------------------------------------------------- #
 # PDF
 # --------------------------------------------------------------------------- #
-def render_pdf(quote: Quote, out_path: str | Path) -> Path:
-    """대금청구서를 PDF 파일로 저장하고 경로를 반환한다."""
+def render_pdf(quote: Quote, out_path: str | Path, extra: Optional[dict] = None) -> Path:
+    """대금청구서를 PDF 파일로 저장하고 경로를 반환한다. (extra 는 사용 안 함)"""
     bold = pdf_common.register_fonts()
     font = pdf_common.FONT
     out_path = Path(out_path)
@@ -252,19 +204,14 @@ def render_pdf(quote: Quote, out_path: str | Path) -> Path:
 
     # 도장: 대표자 값("구자춘 (인)")의 '(인)' 정중앙 위에 겹쳐 찍는다.
     if pdf_common.STAMP_PATH.exists():
-        from reportlab.pdfbase.pdfmetrics import stringWidth
         ceo = COMPANY.ceo                     # 예: "구자춘 (인)"
-        fs = 11.5
         brace_at = ceo.find("(")
         prefix = ceo[:brace_at] if brace_at >= 0 else ceo
         brace = ceo[brace_at:] if brace_at >= 0 else ""
-        value_start = iss_label_w + 4 * mm    # 값 열 텍스트 시작 x
-        brace_center = (value_start
-                        + stringWidth(prefix, font, fs)
-                        + stringWidth(brace, font, fs) / 2)
         size = 18 * mm
-        story.append(_StampOverlay(str(pdf_common.STAMP_PATH), size=size,
-                                   x=brace_center - size / 2, overlap=13 * mm))
+        x = pdf_common.stamp_x_over(prefix, brace, iss_label_w + 4 * mm, font, 11.5, size)
+        story.append(pdf_common.StampOverlay(str(pdf_common.STAMP_PATH), size=size,
+                                             x=x, overlap=13 * mm))
 
     story.append(Spacer(1, 16 * mm))
     story.append(Paragraph(f"{quote.university} 총장 귀하", styles["normal"]))

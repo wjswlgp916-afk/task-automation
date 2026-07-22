@@ -26,7 +26,7 @@ from flask import (
 )
 
 from .catalog import CATALOG, PREMIER_BASE_PRICE, ADDON_PRICE
-from .documents import DOCUMENT_TYPES
+from .documents import DOCUMENT_TYPES, extra_fields_for, coerce_extra
 from .engine import build_quote, Quote, QuoteError
 from .generator import generate
 
@@ -95,11 +95,20 @@ def _tool_view():
 
 
 def _doc_type_view():
-    """템플릿에 넘길 서류 종류 목록."""
-    return [
-        {"key": key, "label": doc.label, "supports_pdf": doc.supports_pdf}
-        for key, doc in DOCUMENT_TYPES.items()
-    ]
+    """템플릿에 넘길 서류 종류 목록 (추가 입력 항목 포함)."""
+    out = []
+    for key, doc in DOCUMENT_TYPES.items():
+        out.append({
+            "key": key,
+            "label": doc.label,
+            "supports_pdf": doc.supports_pdf,
+            "extra": [
+                {"key": f.key, "label": f.label, "kind": f.kind,
+                 "required": f.required, "default": f.default, "help": f.help}
+                for f in doc.extra_fields
+            ],
+        })
+    return out
 
 
 @app.route("/")
@@ -157,6 +166,15 @@ def do_generate():
     if not codes:
         errors.append("설문도구를 하나 이상 선택하세요.")
 
+    # 선택한 서류의 추가 입력값(계약 날짜 등) 수집·검증
+    extra: dict = {}
+    raw_extra = {ef.key: f.get(f"extra_{ef.key}", "")
+                 for ef in extra_fields_for(doc_types)}
+    try:
+        extra = coerce_extra(doc_types, raw_extra)
+    except ValueError as e:
+        errors.append(str(e))
+
     # 한 견적서 코드 목록 만들기 (together: 결합 / separate: 각각)
     quote_codes: List[str] = []
     if not errors:
@@ -172,7 +190,8 @@ def do_generate():
         try:
             for code in quote_codes:
                 quote = build_quote(university, code, issue_date)
-                generated = generate(university, code, out_dir, issue_date, formats, doc_types)
+                generated = generate(university, code, out_dir, issue_date,
+                                     formats, doc_types, extra=extra)
                 files = [{"name": gf.path.name,
                           "kind": gf.path.suffix.lstrip(".").upper(),
                           "label": gf.doc_label,

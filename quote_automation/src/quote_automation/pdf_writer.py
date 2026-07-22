@@ -44,6 +44,7 @@ def render_pdf(
     out_path: str | Path,
     title: str = "견 적 서",
     greeting: str | None = "아래와 같이 견적합니다.",
+    extra: dict | None = None,        # 견적서/거래명세서는 사용 안 함
 ) -> Path:
     """서류를 PDF 파일로 저장하고 경로를 반환한다.
 

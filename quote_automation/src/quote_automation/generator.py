@@ -34,6 +34,7 @@ def generate(
     issue_date: date_cls | None = None,
     formats: Iterable[str] = ("hwp", "pdf"),
     doc_types: Iterable[str] = ("quote",),
+    extra: dict | None = None,
 ) -> List[GeneratedFile]:
     """대학명+등급코드로 선택한 서류들을 한 번에 만들어 파일 경로 목록을 반환한다.
 
@@ -45,6 +46,8 @@ def generate(
     issue_date : 발급일자 (기본 오늘)
     formats    : 'hwp', 'pdf' 중 원하는 것 (서류가 지원하는 형식만 실제로 생성됨)
     doc_types  : documents.DOCUMENT_TYPES 의 키 목록 (예: ['quote', 'transaction_statement'])
+    extra      : 서류별 추가 입력값 (예: 계약보증금 지급각서의 계약 날짜).
+                 documents.coerce_extra() 로 만든 딕셔너리.
     """
     quote = build_quote(university, code, issue_date)
     out_dir = Path(out_dir)
@@ -62,10 +65,10 @@ def generate(
 
         if "hwp" in fmts:
             tpl = template_path(doc_type)
-            path = doc_type.render_hwp(quote, out_dir / f"{stem}.hwp", tpl)
+            path = doc_type.render_hwp(quote, out_dir / f"{stem}.hwp", tpl, extra=extra)
             created.append(GeneratedFile(doc_type.label, path))
         if "pdf" in fmts and doc_type.supports_pdf:
-            path = doc_type.render_pdf(quote, out_dir / f"{stem}.pdf")
+            path = doc_type.render_pdf(quote, out_dir / f"{stem}.pdf", extra=extra)
             created.append(GeneratedFile(doc_type.label, path))
 
     return created

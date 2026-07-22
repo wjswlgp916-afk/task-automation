@@ -9,11 +9,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from quote_automation.documents import DOCUMENT_TYPES, template_path  # noqa: E402
+from quote_automation.documents import (  # noqa: E402
+    DOCUMENT_TYPES, template_path, coerce_extra, extra_fields_for,
+)
 from quote_automation.engine import build_quote  # noqa: E402
 from quote_automation.generator import generate, GeneratedFile  # noqa: E402
 from quote_automation.hwp_writer import render_hwp, parse_records, text_of  # noqa: E402
 from quote_automation import cfbf  # noqa: E402
+
+
+def _guaranty_extra():
+    return coerce_extra(["guaranty"], {"contract_start": "2026-09-01"})
 
 ALL_CODES = [
     "K_B", "K_P", "K_P_1", "K_P_2", "K_P_12",
@@ -136,6 +142,78 @@ def test_invoice_pdf_renders(tmp_path):
     assert "대학 혁신역량 진단 및 분석" in text
     assert "3,300,000" in text
     assert "호서대학교 총장 귀하" in text
+
+
+def test_guaranty_registered_with_extra_fields():
+    assert "guaranty" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["guaranty"]
+    assert doc.label == "계약보증금 지급각서"
+    assert doc.supports_pdf is True
+    keys = [f.key for f in doc.extra_fields]
+    assert keys == ["contract_start", "contract_end", "commencement"]
+    assert doc.extra_fields[0].required is True     # 계약 시작일 필수
+    assert doc.extra_fields[1].default == "2027-01-31"
+    assert doc.extra_fields[2].default == "2026-09-01"
+
+
+def test_coerce_extra_applies_defaults_and_requires_start():
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        coerce_extra(["guaranty"], {})              # 계약 시작일 없음
+    got = coerce_extra(["guaranty"], {"contract_start": "2026-09-05"})
+    assert got["contract_start"] == date(2026, 9, 5)
+    assert got["contract_end"] == date(2027, 1, 31)   # 기본값
+    assert got["commencement"] == date(2026, 9, 1)    # 기본값
+
+
+@pytest.mark.parametrize("code,expect_subject", [
+    ("K_P_12", "학부교육의 질과 성과 진단 및 분석"),
+    ("U_P_1", "대학 혁신역량 진단 및 분석"),
+    ("K_P_12+U_P_1", "학부교육의 질과 성과 진단 및 분석"),
+])
+def test_guaranty_hwp_fields(tmp_path, code, expect_subject):
+    doc = DOCUMENT_TYPES["guaranty"]
+    q = build_quote("호서대학교", code, date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "g.hwp", None, extra=_guaranty_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert f"계  약  명 : {expect_subject}" in joined
+    assert f"{q.grand_total:,}" in joined               # 계약금액
+    assert f"{round(q.grand_total * 0.1):,}" in joined   # 계약보증금(10%)
+    assert "2026. 09. 01 ∼ 2027. 01. 31 (착수일: 2026년 9월 1일)" in joined
+    assert "2026년  8월  15일" in joined                 # 발급일자(착수일과 다름)
+    assert "호서대학교 총장 귀하" in joined
+
+
+def test_guaranty_missing_dates_raises(tmp_path):
+    doc = DOCUMENT_TYPES["guaranty"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    with pytest.raises(Exception):
+        doc.render_hwp(q, tmp_path / "g.hwp", None, extra=None)
+
+
+def test_guaranty_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["guaranty"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "g.pdf", extra=_guaranty_extra())
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "계약보증금 지급각서" in text
+    assert "7,700,000" in text and "770,000" in text
+    assert "호서대학교 총장 귀하" in text
+
+
+def test_generate_guaranty_needs_extra(tmp_path):
+    # extra 없이 guaranty 생성 시도 -> 예외
+    with pytest.raises(Exception):
+        generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                 doc_types=["guaranty"], extra=None)
+    # extra 주면 성공
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     doc_types=["guaranty"], extra=_guaranty_extra())
+    assert len(files) == 2 and all(gf.path.is_file() for gf in files)
 
 
 def test_generate_unknown_doc_type_raises(tmp_path):

@@ -96,6 +96,29 @@ class Quote:
     def total_won(self) -> str:
         return won_amount(self.grand_total)
 
+    @property
+    def tools(self) -> set:
+        """포함된 설문도구 코드 집합 (예: {'K'}, {'U'}, {'K','U'})."""
+        return {code.split("_", 1)[0] for code in self.source_codes}
+
+
+def short_product_name(tool_code: str) -> str:
+    """정식 품명에서 '(K-NSSE)'/'(UICA)' 같은 끝 괄호 표기를 뗀 사업명."""
+    full = CATALOG[tool_code].product_name
+    return re.sub(r"\([^)]*\)\s*$", "", full).strip()
+
+
+def subject_override(quote: "Quote"):
+    """계약명/건명을 바꿔야 하면 새 값을, 기본값을 유지하면 None 을 반환한다.
+
+    규칙(사용자 확정): K 단독 또는 K+U 결합이면 기본값(K-NSSE 사업명) 유지,
+    U 단독이면 "대학 혁신역량 진단 및 분석"으로 교체.
+    견적서·대금청구서·계약보증금 지급각서가 공유한다.
+    """
+    if quote.tools == {"U"}:
+        return short_product_name("U")
+    return None
+
 
 def parse_token(token: str) -> ToolSelection:
     """등급 토큰 하나를 파싱·검증한다 (예: 'K_P_12')."""

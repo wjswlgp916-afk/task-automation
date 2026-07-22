@@ -9,6 +9,10 @@ from pathlib import Path
 
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Flowable
+
+# 흰 배경을 투명 처리해 붉은 인영만 남기는 색상 키 마스크 (글자 위에 겹칠 때)
+STAMP_WHITE_MASK = [230, 255, 230, 255, 230, 255]
 
 FONT = "NanumGothic"
 FONT_BOLD = "NanumGothic-Bold"
@@ -35,3 +39,44 @@ def register_fonts() -> str:
 
 def format_amount(v: int) -> str:
     return f"{v:,}" if v else "0"
+
+
+class StampOverlay(Flowable):
+    """도장 이미지를 바로 위 줄(대표자 '(인)')에 겹쳐 찍는다.
+
+    reportlab flowable 은 겹침을 직접 지원하지 않으므로, 실제 도장보다 낮은
+    높이만 차지하고 이미지를 위쪽(이전 줄)까지 올려 그린다. 흰 배경은
+    색상 키 마스크로 투명 처리해 글자가 비쳐 보이도록 한다.
+    """
+
+    def __init__(self, path: str, size: float, x: float, overlap: float):
+        super().__init__()
+        self.path = path
+        self.size = size          # 도장 한 변 길이
+        self.x = x                # 프레임 왼쪽 기준 x
+        self.overlap = overlap    # 위 줄로 겹쳐 올라갈 높이
+
+    def wrap(self, availWidth, availHeight):
+        return (availWidth, max(0.0, self.size - self.overlap))
+
+    def draw(self):
+        # 로컬 원점(0,0)=박스 좌하단. y=0 에서 size 높이로 그리면
+        # 위쪽 overlap 만큼 이전 줄에 겹쳐진다.
+        self.canv.drawImage(
+            self.path, self.x, 0, width=self.size, height=self.size,
+            mask=STAMP_WHITE_MASK, preserveAspectRatio=True,
+        )
+
+
+def stamp_x_over(text_before: str, target: str, value_start_x: float,
+                 font: str, font_size: float, stamp_size: float) -> float:
+    """값 문자열에서 ``target`` (예: '(인)') 중앙 위에 도장을 놓을 x 를 계산한다.
+
+    text_before : target 앞의 문자열(예: '구자춘 ')
+    value_start_x : 값 텍스트가 시작하는 x (프레임 왼쪽 기준)
+    """
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    center = (value_start_x
+              + stringWidth(text_before, font, font_size)
+              + stringWidth(target, font, font_size) / 2)
+    return center - stamp_size / 2

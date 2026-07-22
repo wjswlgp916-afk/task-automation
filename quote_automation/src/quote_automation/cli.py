@@ -20,7 +20,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .catalog import CATALOG, PREMIER_BASE_PRICE, ADDON_PRICE
-from .documents import DOCUMENT_TYPES
+from .documents import DOCUMENT_TYPES, coerce_extra
 from .engine import build_quote, QuoteError
 from .generator import generate, summarize
 
@@ -49,6 +49,9 @@ def _print_catalog() -> None:
     for key, doc in DOCUMENT_TYPES.items():
         fmt = "HWP+PDF" if doc.supports_pdf else "HWP"
         print(f"    {key:24s} {doc.label}  ({fmt})")
+        for ef in doc.extra_fields:
+            req = " (필수)" if ef.required else f" (기본: {ef.default})" if ef.default else ""
+            print(f"        --extra {ef.key}=YYYY-MM-DD   {ef.label}{req}")
 
 
 def main(argv=None) -> int:
@@ -70,7 +73,11 @@ def main(argv=None) -> int:
     p.add_argument("--doctype", dest="doc_types", action="append",
                    choices=list(DOCUMENT_TYPES), default=None,
                    help="만들 서류 종류 (여러 번 지정 가능, 기본: quote)")
-    p.add_argument("--list", action="store_true", help="등급 코드 목록 출력 후 종료")
+    p.add_argument("--extra", dest="extra", action="append", default=[],
+                   metavar="KEY=VALUE",
+                   help="서류별 추가 입력 (예: --extra contract_start=2026-09-01). "
+                        "계약보증금 지급각서 등에 필요. 필요한 키는 --list 참고")
+    p.add_argument("--list", action="store_true", help="등급 코드·서류 종류 목록 출력 후 종료")
 
     args = p.parse_args(argv)
 
@@ -84,11 +91,24 @@ def main(argv=None) -> int:
     formats = args.formats or ["hwp", "pdf"]
     doc_types = args.doc_types or ["quote"]
 
+    raw_extra = {}
+    for item in args.extra:
+        if "=" not in item:
+            p.error(f"--extra 는 KEY=VALUE 형식입니다: {item!r}")
+        k, v = item.split("=", 1)
+        raw_extra[k.strip()] = v.strip()
+    try:
+        extra = coerce_extra(doc_types, raw_extra)
+    except ValueError as e:
+        print(f"❌ 추가 입력 오류: {e}", file=sys.stderr)
+        return 1
+
     exit_code = 0
     for code in args.codes:
         try:
             quote = build_quote(args.university, code, args.date)
-            files = generate(args.university, code, args.out_dir, args.date, formats, doc_types)
+            files = generate(args.university, code, args.out_dir, args.date,
+                             formats, doc_types, extra=extra)
             labels = ", ".join(DOCUMENT_TYPES[d].label for d in doc_types)
             print(f"\n✅ 서류 생성 [{code}] ({labels})")
             print(summarize(quote))

@@ -287,6 +287,7 @@ def render_hwp(
     quote: Quote,
     out_path: str | Path,
     template: Optional[str | Path] = None,
+    extra: Optional[dict] = None,     # 견적서/거래명세서는 사용 안 함
 ) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

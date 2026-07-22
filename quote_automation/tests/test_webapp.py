@@ -67,6 +67,38 @@ def test_generate_separate(client):
     assert html.count("/download/") == 4      # 두 견적서 × (HWP+PDF)
 
 
+def test_guaranty_extra_fields_shown_with_defaults(client):
+    html = client.get("/", headers=_auth()).get_data(as_text=True)
+    assert "계약보증금 지급각서" in html
+    assert 'name="extra_contract_start"' in html
+    assert 'value="2027-01-31"' in html      # 계약 종료일 기본값
+    assert 'value="2026-09-01"' in html      # 착수일 기본값
+
+
+def test_guaranty_requires_contract_start(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P",
+        "doc_guaranty": "on", "fmt_hwp": "on",
+    })
+    assert r.status_code == 400
+    assert "계약 시작일" in r.get_data(as_text=True)
+
+
+def test_guaranty_generates_with_dates(client):
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "호서대학교", "date": "2026-08-15",
+        "K_include": "on", "K_grade": "P",
+        "doc_guaranty": "on",
+        "extra_contract_start": "2026-09-01",
+        "extra_contract_end": "2027-01-31",
+        "extra_commencement": "2026-09-01",
+        "fmt_hwp": "on", "fmt_pdf": "on",
+    })
+    assert r.status_code == 200
+    assert r.get_data(as_text=True).count("/download/") == 2   # 각서 HWP+PDF
+
+
 def test_generate_multiple_doc_types(client):
     # 견적서(HWP+PDF) + 거래명세서(HWP+PDF) 를 동시에 선택
     r = client.post("/generate", headers=_auth(), data={

@@ -69,11 +69,28 @@
         {% for d in doc_types %}
         <span class="inline">
           <input class="chk" type="checkbox" name="doc_{{ d.key }}" id="doc_{{ d.key }}"
-                 {% if loop.first %}checked{% endif %}>
+                 {% if loop.first %}checked{% endif %}
+                 {% if d.extra %}onchange="toggleExtra('{{ d.key }}')"{% endif %}>
           <label for="doc_{{ d.key }}">{{ d.label }}{% if not d.supports_pdf %} <span class="muted">(HWP만)</span>{% endif %}</label>
         </span>
         {% endfor %}
       </div>
+
+      {% for d in doc_types if d.extra %}
+      <div class="extra-box" id="extra_{{ d.key }}" style="display:none; margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);">
+        <div class="muted" style="margin-bottom:8px;">📋 <b>{{ d.label }}</b> 추가 정보</div>
+        <div class="row">
+          {% for ef in d.extra %}
+          <div style="min-width:150px;">
+            <label>{{ ef.label }}{% if ef.required %} <span style="color:#c00;">*</span>{% endif %}</label>
+            <input type="date" name="extra_{{ ef.key }}"
+                   value="{{ form.get('extra_' + ef.key) if form else ef.default }}">
+            {% if ef.help %}<div class="muted" style="margin-top:3px;">{{ ef.help }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
     </div>
 
     <div class="card">
@@ -145,6 +162,16 @@ function updateCombine(){
   var both = document.getElementById('K_include').checked && document.getElementById('U_include').checked;
   document.getElementById('combineBox').style.display = both ? 'block' : 'none';
 }
+function toggleExtra(key){
+  var box = document.getElementById('extra_'+key);
+  if(box) box.style.display = document.getElementById('doc_'+key).checked ? 'block' : 'none';
+}
+// 페이지 로드 시 이미 체크된 서류의 추가 입력칸을 표시
+document.querySelectorAll('.extra-box').forEach(function(box){
+  var key = box.id.replace('extra_','');
+  var cb = document.getElementById('doc_'+key);
+  if(cb && cb.checked) box.style.display = 'block';
+});
 </script>
 </body>
 </html>

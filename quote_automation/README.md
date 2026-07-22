@@ -88,6 +88,22 @@ APP_PASSWORD=원하는비밀번호 python -m quote_automation.webapp
 | 견적서 (`quote`) | HWP + PDF | 기본값 |
 | 거래명세서 (`transaction_statement`) | HWP + PDF | 견적서와 표 구조가 동일한 원본 양식, 제목(과 인사말 유무)만 다름 |
 | 대금청구서 (`invoice`) | HWP + PDF | 품목 표 없는 1페이지 공문. 청구금액은 견적 합계와 자동 연동. K 단독/결합이면 건명 기본값 유지, U 단독이면 "대학 혁신역량 진단 및 분석"으로 자동 변경 |
+| 계약보증금 지급각서 (`guaranty`) | HWP + PDF | 계약금액=견적 합계, 계약보증금=계약금액의 10% 자동. **계약 시작일**(대학마다 다름)·종료일·착수일을 추가로 입력받음(아래 참고). 건명 규칙은 위와 동일 |
+
+### 서류별 추가 입력 (계약 날짜 등)
+
+일부 서류는 대학명·등급·발급일자만으로는 알 수 없는 값이 필요하다. 예를 들어
+**계약보증금 지급각서**는 계약 기간이 필요하다. 이런 항목은 `documents.py` 의
+`DocumentType.extra_fields` 로 선언하며, 웹 대시보드는 해당 서류를 체크하면
+입력칸이 자동으로 나타나고(종료일·착수일은 기본값이 채워짐), CLI 는
+`--extra key=value` 로 받는다.
+
+```bash
+# 견적서 + 계약보증금 지급각서 (계약 시작일만 지정, 종료일·착수일은 기본값)
+quote-gen --univ 호서대학교 --code K_P_12 --date 2026-08-15 \
+          --doctype quote --doctype guaranty \
+          --extra contract_start=2026-09-01
+```
 
 새 서류(과업지시서 등)를 추가할 때는 `documents.py` 의 `DOCUMENT_TYPES` 에
 항목 하나만 등록하면 CLI·웹 대시보드에 자동으로 나타난다. 서류 종류마다
@@ -166,6 +182,7 @@ src/quote_automation/
   hwp_writer.py     견적서/거래명세서 HWP 생성 (원본 양식 편집) +
                     범용 문단 치환 유틸(replace_literal_everywhere 등)
   invoice_writer.py 대금청구서 전용 렌더러 (문장형 공문, HWP+PDF)
+  guaranty_writer.py 계약보증금 지급각서 전용 렌더러 (계약 날짜 입력, HWP+PDF)
   cfbf.py           HWP 컨테이너(OLE 복합문서) 리더/라이터
   generator.py      고수준 API (여러 서류를 한 번에 HWP/PDF 로)
   cli.py            명령줄 인터페이스
