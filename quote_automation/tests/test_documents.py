@@ -755,3 +755,152 @@ def test_generate_contract_hwp_only_even_if_pdf_requested(tmp_path):
                      formats=["hwp", "pdf"], doc_types=["contract"], extra=_contract_extra())
     assert [f.path.suffix for f in files] == [".hwp"]
     assert files[0].path.is_file()
+
+
+# --------------------------------------------------------------------------- #
+# 독점 공급 확인서 (HWP + PDF, 도구 구성에 따라 본문이 통째로 바뀜)
+# --------------------------------------------------------------------------- #
+def _exsupply_texts(out_path):
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out_path))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    return recs, "\n".join(text_of(r) for r in recs if r.tag == 67)
+
+
+def _assert_exsupply_structure_ok(recs):
+    """메모 정합성(인라인 id == CTRL_HEADER id == MEMO_LIST id), 필드 마커
+    균형, 글자모양 위치·개수 정합을 확인한다(계약서에서 겪은 손상 패턴과 동일)."""
+    inline_ids: List[int] = []
+    begin = end = 0
+    for r in recs:
+        if r.tag != 67:
+            continue
+        u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
+        begin += sum(1 for c in u if c == 3)
+        end += sum(1 for c in u if c == 4)
+        k = 0
+        while k < len(u):
+            if u[k] == 4 and k + 5 < len(u) and u[k + 1] == 0x6D65:
+                inline_ids.append(u[k + 5])
+                k += 8
+            elif u[k] in {1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23}:
+                k += 8
+            else:
+                k += 1
+    ctrl_ids = [struct.unpack("<I", r.payload[-4:])[0] for r in recs
+                if r.tag == 71 and r.payload[:4] == b"knu%"]
+    memo_ids = [struct.unpack("<I", r.payload[0:4])[0] for r in recs if r.tag == 93]
+    assert sorted(set(inline_ids)) == sorted(ctrl_ids) == sorted(memo_ids), \
+        f"메모 정합 깨짐 inline={sorted(set(inline_ids))} ctrl={sorted(ctrl_ids)} memo={sorted(memo_ids)}"
+    assert begin == end, f"필드 마커 불균형(begin={begin}, end={end}) = 파일 손상"
+
+    for i, r in enumerate(recs):
+        if r.tag != 66:
+            continue
+        txt = cs = None
+        for j in range(i + 1, min(i + 8, len(recs))):
+            if recs[j].tag == 67 and txt is None:
+                txt = recs[j]
+            if recs[j].tag == 68 and cs is None:
+                cs = recs[j]
+            if recs[j].tag == 66:
+                break
+        tlen = len(txt.payload) // 2 if txt else 0
+        declared = struct.unpack("<H", r.payload[12:14])[0]
+        if cs is not None and tlen > 0:
+            n = len(cs.payload) // 8
+            assert n == declared, f"글자모양 개수 불일치 para {i}"
+            for k in range(n):
+                pos = struct.unpack_from("<II", cs.payload, k * 8)[0]
+                assert pos < tlen, f"글자모양 위치 범위초과 para {i}: {pos}>={tlen}"
+
+
+def test_exclusive_supply_registered():
+    assert "exclusive_supply" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    assert doc.label == "독점공급확인서"
+    assert doc.supports_pdf is True
+    assert template_path(doc).exists()
+
+
+def test_exclusive_supply_k_only_matches_reference(tmp_path):
+    """배재대학교 참고본과 동일한 문구 + UICA 관련 메모 5개 제거."""
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    q = build_quote("배재대학교", "K_P_12", date(2025, 8, 28))
+    out = doc.render_hwp(q, tmp_path / "e.hwp", None)
+    recs, joined = _exsupply_texts(out)
+    assert "자문계약명 : 학부교육의 질과 성과 진단 및 분석" in joined
+    assert "학부교육 실태조사(K-NSSE)와를 진단도구로 사용하고 있습니다" in joined
+    assert "대학 혁신역량 진단조사(UICA)" not in joined
+    assert "2025. 8. 28." in joined
+    assert "OO대학교" not in joined
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 1   # 계약명 자리의 메모(id=6)만 남고 본문 5개는 제거됨
+    _assert_exsupply_structure_ok(recs)
+
+
+def test_exclusive_supply_u_only_matches_reference(tmp_path):
+    """포항공과대학교 참고본과 동일한 문구 + 계약명 자동 변경."""
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    q = build_quote("포항공과대학교", "U_P_1", date(2025, 9, 3))
+    out = doc.render_hwp(q, tmp_path / "e.hwp", None)
+    recs, joined = _exsupply_texts(out)
+    assert "자문계약명 : 대학 혁신역량 진단 및 분석" in joined
+    assert "학부교육의 질과 성과" not in joined
+    assert "대학 혁신역량 진단조사(UICA)를 진단도구로 사용하고 있습니다" in joined
+    assert "학부교육 실태조사(K-NSSE)" not in joined
+    assert "2025. 9. 3." in joined
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 1
+    _assert_exsupply_structure_ok(recs)
+
+
+def test_exclusive_supply_combined_keeps_all_memos(tmp_path):
+    """K+U 결합이면 본문을 손대지 않고 대학명만 채운다 — 메모 6개 전부 유지."""
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    q = build_quote("한성대학교", "K_P_12+U_P_1", date(2025, 9, 10))
+    out = doc.render_hwp(q, tmp_path / "e.hwp", None)
+    recs, joined = _exsupply_texts(out)
+    assert "자문계약명 : 학부교육의 질과 성과 진단 및 분석" in joined
+    assert "학부교육 실태조사(K-NSSE)와 대학 혁신역량 진단조사(UICA)를 진단도구로" in joined
+    assert "한성대학교의 학부교육의 질과 성과, 혁신 역량 등에 대한" in joined
+    assert "OO대학교" not in joined
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 6
+    _assert_exsupply_structure_ok(recs)
+
+
+@pytest.mark.parametrize("code,univ", [
+    ("K_B", "가나다대학교"), ("K_P", "가나다대학교"), ("K_P_12", "가나다대학교"),
+    ("U_B", "가나다대학교"), ("U_P", "가나다대학교"), ("U_P_1", "가나다대학교"),
+    ("K_B+U_B", "가나다대학교"), ("K_P_12+U_P_1", "가나다대학교"), ("K_B+U_P_1", "가나다대학교"),
+])
+def test_exclusive_supply_all_combos_integrity(tmp_path, code, univ):
+    """등급 무관(베이직 포함) 모든 조합에서 손상 없는 HWP 를 만든다."""
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    q = build_quote(univ, code, date(2025, 8, 28))
+    out = doc.render_hwp(q, tmp_path / "e.hwp", None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    from quote_automation.hwp_writer import serialize_records
+    assert serialize_records(recs) == data
+    _assert_exsupply_structure_ok(recs)
+
+
+def test_exclusive_supply_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["exclusive_supply"]
+    q = build_quote("배재대학교", "K_P_12", date(2025, 8, 28))
+    out = doc.render_pdf(q, tmp_path / "e.pdf")
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "독점 공급 확인서" in text
+    assert "배재대학교" in text
+    assert "2025. 8. 28." in text
+
+
+def test_generate_exclusive_supply_hwp_and_pdf(tmp_path):
+    files = generate("배재대학교", "K_P_12", tmp_path, date(2025, 8, 28),
+                     formats=["hwp", "pdf"], doc_types=["exclusive_supply"])
+    assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
+    assert all(f.path.is_file() for f in files)

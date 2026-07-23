@@ -24,6 +24,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import (
     completion_writer,
     contract_writer,
+    exclusive_supply_writer,
     guaranty_writer,
     hwp_writer,
     inspection_writer,
@@ -148,6 +149,13 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
             ExtraField("u_staff", "UICA 직원 기준", "text",
                        help="비워두면 설문기준 엑셀값 사용 (대학 요청 시만 입력)"),
         ),
+    ),
+    "exclusive_supply": DocumentType(
+        key="exclusive_supply",
+        label="독점공급확인서",
+        render_hwp=exclusive_supply_writer.render_hwp,
+        render_pdf=exclusive_supply_writer.render_pdf,
+        template_filename="exclusive_supply_template.hwp",
     ),
 }
 
