@@ -83,7 +83,8 @@
           {% for ef in d.extra %}
           <div style="min-width:150px;">
             <label>{{ ef.label }}{% if ef.required %} <span style="color:#c00;">*</span>{% endif %}</label>
-            <input type="date" name="extra_{{ ef.key }}"
+            <input type="{{ 'date' if ef.kind == 'date' else 'text' }}" name="extra_{{ ef.key }}"
+                   {% if ef.kind != 'date' %}placeholder="{{ ef.default or '엑셀값 사용' }}"{% endif %}
                    value="{{ form.get('extra_' + ef.key) if form else ef.default }}">
             {% if ef.help %}<div class="muted" style="margin-top:3px;">{{ ef.help }}</div>{% endif %}
           </div>

@@ -51,7 +51,8 @@ def _print_catalog() -> None:
         print(f"    {key:24s} {doc.label}  ({fmt})")
         for ef in doc.extra_fields:
             req = " (필수)" if ef.required else f" (기본: {ef.default})" if ef.default else ""
-            print(f"        --extra {ef.key}=YYYY-MM-DD   {ef.label}{req}")
+            hint = "YYYY-MM-DD" if ef.kind == "date" else "값"
+            print(f"        --extra {ef.key}={hint}   {ef.label}{req}")
 
 
 def main(argv=None) -> int:

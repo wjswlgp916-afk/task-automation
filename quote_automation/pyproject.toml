@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "olefile>=0.47",
     "reportlab>=4.0",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +25,7 @@ quote-gen = "quote_automation.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-quote_automation = ["templates/*.hwp", "templates/*.png", "webapp_templates/*.html"]
+quote_automation = ["templates/*.hwp", "templates/*.png", "webapp_templates/*.html", "data/*.xlsx"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

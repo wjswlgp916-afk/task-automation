@@ -480,3 +480,152 @@ def test_generate_completion_report_needs_extra(tmp_path):
     files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
                      doc_types=["completion_report"], extra=_completion_extra())
     assert len(files) == 2 and all(gf.path.is_file() for gf in files)
+
+
+# --------------------------------------------------------------------------- #
+# 자문 계약서 (HWP 전용, 등급별 자동 조정)
+# --------------------------------------------------------------------------- #
+def _contract_extra(**over):
+    raw = {"contract_date": "2026-08-20"}
+    raw.update(over)
+    return coerce_extra(["contract"], raw)
+
+
+def _contract_texts(out_path):
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out_path))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    return recs, "\n".join(text_of(r) for r in recs if r.tag == 67)
+
+
+def test_contract_registered_hwp_only():
+    assert "contract" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["contract"]
+    assert doc.label == "자문 계약서"
+    assert doc.supports_pdf is False            # 계약서는 HWP만
+    assert template_path(doc).exists()
+    keys = [f.key for f in doc.extra_fields]
+    assert keys[:4] == ["contract_date", "payment_due", "period_start", "period_end"]
+    assert doc.extra_fields[0].required is True
+
+
+def test_contract_coerce_defaults_and_required():
+    with pytest.raises(ValueError):
+        coerce_extra(["contract"], {})           # 계약체결일 없음
+    got = coerce_extra(["contract"], {"contract_date": "2026-08-20"})
+    assert got["contract_date"] == date(2026, 8, 20)
+    assert got["payment_due"] == date(2027, 2, 13)
+    assert got["period_start"] == date(2026, 9, 1)
+    assert got["period_end"] == date(2027, 1, 31)
+
+
+def test_contract_kp1_up_combined(tmp_path):
+    """한성대 K_P_1+U_P: 계약명 기본값, 금액, K는 부가1까지 U는 기본만, 설문기준 엑셀조회."""
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+    recs, joined = _contract_texts(out)
+    # 계약명: K+U 결합 -> 기본값 유지
+    assert "학부교육의 질과 성과 진단 및 분석" in joined
+    # 금액: 5,500,000(포함) / 5,000,000(별도)
+    assert "5,500,000" in joined and "5,000,000" in joined
+    # 자문범위: K 1~3 + 단과대학별(부가1), U 1~3, Peer 없음
+    assert "1. 학부교육 실태조사(K-NSSE)" in joined
+    assert "4) (단과대학별 분석)" in joined
+    assert "2. 대학 혁신역량 진단조사(UICA)" in joined
+    assert "Peer Benchmarking" not in joined
+    # 설문기준: 한성대 엑셀값 200/50/50
+    assert "재학생 200명 이상 교수 50명 이상, 직원 50명 이상" in joined
+    # 대학명 치환 완료 + 계약체결일
+    assert "OO대학교" not in joined
+    assert "2026년 8월 20일" in joined
+    # 실무 메모/형광펜 제거 + 손상 유발 없음
+    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
+    assert not any(r.tag in (70, 93) for r in recs)
+    _assert_para_header_range_counts_consistent(recs)
+
+
+def test_contract_uica_only_subject_and_notes(tmp_path):
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "U_P_1", date(2026, 7, 23))
+    _, joined = _contract_texts(doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra()))
+    # U 단독 -> 계약명 변경
+    assert "대학 혁신역량 진단 및 분석" in joined
+    assert "학부교육의 질과 성과" not in joined
+    # UICA 섹션이 "1." 로 재번호, Peer(부가1) 포함
+    assert "1. 대학 혁신역량 진단조사(UICA)" in joined
+    assert "4) (Peer Benchmarking)" in joined
+    # K 관련 문구 없음, 특이사항엔 재학생 빠지고 교수/직원만
+    assert "학부교육 실태조사(K-NSSE)" not in joined
+    assert "재학생" not in joined
+    assert "교수 50명 이상, 직원 50명 이상" in joined
+    # 금액 U_P_1 = 3,300,000 / 3,000,000
+    assert "3,300,000" in joined and "3,000,000" in joined
+
+
+def test_contract_uica_basic_adjusts_scope_and_report(tmp_path):
+    """K_P_12+U_B: UICA(베이직)은 '대학 간 비교' 한 줄만, 보고서는 excel 파일."""
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "K_P_12+U_B", date(2026, 7, 23))
+    _, joined = _contract_texts(doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra()))
+    # K 프리미어 전체 (부가1·2)
+    assert "4) (단과대학별 분석)" in joined and "5) (Peer Benchmarking)" in joined
+    # UICA 베이직: 대학 간 비교만, 대학 내/성장분석/Peer 없음(UICA쪽)
+    assert "1) (대학 간 비교) 한성대학교 교수, 직원" in joined
+    assert "교수, 직원의 보직경험별" not in joined      # UICA 대학 내 비교 없음
+    # UICA 제공자료 보고서 = excel 파일
+    assert "대학별 보고서(excel 파일)" in joined
+    # 금액 4,400,000(K_P_12만, UICA B=0) / 4,000,000
+    assert "4,400,000" in joined and "4,000,000" in joined
+    # 특이사항엔 UICA(교수/직원)도 여전히 포함
+    assert "재학생 200명 이상 교수 50명 이상, 직원 50명 이상" in joined
+
+
+def test_contract_basic_only_rejected(tmp_path):
+    doc = DOCUMENT_TYPES["contract"]
+    for code in ["K_B", "U_B", "K_B+U_B"]:
+        q = build_quote("한성대학교", code, date(2026, 7, 23))
+        with pytest.raises(Exception, match="베이직"):
+            doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+
+
+def test_contract_survey_override(tmp_path):
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
+    extra = _contract_extra(k_respondents="250", u_professors="60", u_staff="45")
+    _, joined = _contract_texts(doc.render_hwp(q, tmp_path / "c.hwp", None, extra=extra))
+    assert "재학생 250명 이상 교수 60명 이상, 직원 45명 이상" in joined
+
+
+def test_contract_period_override_recomputes_months(tmp_path):
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "U_P", date(2026, 7, 23))
+    extra = _contract_extra(period_start="2026-09-01", period_end="2027-02-28")
+    _, joined = _contract_texts(doc.render_hwp(q, tmp_path / "c.hwp", None, extra=extra))
+    assert "2026년 9월 1일부터 2027년 2월 28일까지(만 6개월)" in joined
+    assert "2026. 9. 1. ∼ 2027. 2. 28." in joined
+
+
+@pytest.mark.parametrize("code", [
+    "K_P", "U_P", "K_P_1", "K_P_12", "U_P_1",
+    "K_P_1+U_P", "K_P_12+U_P_1", "K_P_12+U_B", "K_B+U_P",
+])
+def test_contract_all_valid_combos_integrity(tmp_path, code):
+    """유효한 모든 조합이 손상 없는 HWP(재직렬화 일치·범위태그 정합)를 만든다."""
+    import struct as _struct
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", code, date(2026, 7, 23))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    from quote_automation.hwp_writer import serialize_records
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    assert serialize_records(recs) == data       # 재직렬화 일치 (손상 아님)
+    _assert_para_header_range_counts_consistent(recs)
+    assert not any(r.tag in (70, 93) for r in recs)
+
+
+def test_generate_contract_hwp_only_even_if_pdf_requested(tmp_path):
+    files = generate("한성대학교", "K_P_1+U_P", tmp_path, date(2026, 7, 23),
+                     formats=["hwp", "pdf"], doc_types=["contract"], extra=_contract_extra())
+    assert [f.path.suffix for f in files] == [".hwp"]
+    assert files[0].path.is_file()

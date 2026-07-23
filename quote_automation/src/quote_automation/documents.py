@@ -23,6 +23,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import (
     completion_writer,
+    contract_writer,
     guaranty_writer,
     hwp_writer,
     inspection_writer,
@@ -125,6 +126,29 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
                        help="보통 고정 (필요시 수정)"),
             ExtraField("completion_date", "완료년월일", "date", default="2026-12-18",
                        help="보통 고정 (필요시 수정)"),
+        ),
+    ),
+    "contract": DocumentType(
+        key="contract",
+        label="자문 계약서",
+        render_hwp=contract_writer.render_hwp,
+        render_pdf=None,                         # 계약서는 한글(HWP)만
+        template_filename="contract_template.hwp",
+        extra_fields=(
+            ExtraField("contract_date", "계약체결일", "date", required=True,
+                       help="대학마다 바뀌는 계약 체결일"),
+            ExtraField("payment_due", "납부기한", "date", default="2027-02-13",
+                       help="보통 고정 (대학 회계마감 따라 변경 가능)"),
+            ExtraField("period_start", "자문 시작일", "date", default="2026-09-01",
+                       help="보통 고정 (필요시 수정)"),
+            ExtraField("period_end", "자문 종료일", "date", default="2027-01-31",
+                       help="보통 고정 (필요시 수정)"),
+            ExtraField("k_respondents", "K-NSSE 재학생 기준", "text",
+                       help="비워두면 설문기준 엑셀값 사용 (대학 요청 시만 입력)"),
+            ExtraField("u_professors", "UICA 교수 기준", "text",
+                       help="비워두면 설문기준 엑셀값 사용 (대학 요청 시만 입력)"),
+            ExtraField("u_staff", "UICA 직원 기준", "text",
+                       help="비워두면 설문기준 엑셀값 사용 (대학 요청 시만 입력)"),
         ),
     ),
 }
