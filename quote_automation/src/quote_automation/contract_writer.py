@@ -12,11 +12,13 @@
   * 베이직은 단독 계약 대상이 아니며, 반대 도구가 프리미어일 때만 함께 실린다.
 
 extra 딕셔너리:
-  contract_date        계약체결일 (필수, 대학마다 다름)
   payment_due          납부기한   (기본 2027-02-13, 대학 회계마감 따라 변경 가능)
   period_start/period_end  자문기간 (기본 2026-09-01 ~ 2027-01-31)
   k_respondents        K-NSSE 재학생 최소 응답 (미지정 시 엑셀에서 조회)
   u_professors/u_staff UICA 교수·직원 최소 응답 (미지정 시 엑셀에서 조회)
+
+계약체결일은 대학이 계약서를 받아 직접 기입하는 자리라 채우지 않고
+"0월 0일" placeholder 를 템플릿 그대로 남겨둔다.
 """
 
 from __future__ import annotations
@@ -63,8 +65,8 @@ _AMOUNT_GROSS = "7,700,000"     # 자문료 VAT 포함
 _PERIOD_SENTENCE = "2026년 9월 1일부터 2027년 1월 31일까지(만 5개월)"
 _PERIOD_TABLE = "2026. 9. 1. ∼ 2027. 1. 31."
 _PAYMENT_DUE = "2027년 2월 13일"
-_CONTRACT_DATE_KOR = "2026년 0월 0일"
-_CONTRACT_DATE_DOT = "2026. 0. 0."
+# 계약체결일("2026년 0월 0일" / "2026. 0. 0.")은 대학이 계약서를 받아 직접
+# 기입하는 자리라 일부러 채우지 않고 템플릿 그대로 남겨둔다.
 _UNIV = "OO대학교"
 
 # 제공자료 보고서 문구
@@ -476,14 +478,14 @@ def _edit_special_notes(records: List[Record], k_sel, u_sel,
 # 입력값 정리
 # --------------------------------------------------------------------------- #
 def _dates(extra: Optional[dict]):
+    # 계약체결일("0월 0일")은 대학이 계약서를 받아 직접 기입하는 자리라 여기서
+    # 채우지 않고 템플릿 그대로 남겨둔다(render_hwp 의 rep() 호출 목록에서
+    # 계약체결일 placeholder 는 의도적으로 제외됨).
     extra = extra or {}
-    contract_date = extra.get("contract_date")
-    if not contract_date:
-        raise ContractError("자문 계약서에는 계약체결일이 필요합니다.")
     period_start = extra.get("period_start") or DEFAULT_PERIOD_START
     period_end = extra.get("period_end") or DEFAULT_PERIOD_END
     payment_due = extra.get("payment_due") or DEFAULT_PAYMENT_DUE
-    return contract_date, period_start, period_end, payment_due
+    return period_start, period_end, payment_due
 
 
 def _mins(quote: Quote, k_sel, u_sel, extra: Optional[dict]) -> survey_criteria.SurveyCriteria:
@@ -539,7 +541,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
             "(한쪽이 프리미어일 때만 반대쪽 베이직을 함께 실을 수 있습니다)."
         )
 
-    contract_date, period_start, period_end, payment_due = _dates(extra)
+    period_start, period_end, payment_due = _dates(extra)
     mins = _mins(quote, k_sel, u_sel, extra)
 
     out_path = Path(out_path)
@@ -578,7 +580,9 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     rep(_AMOUNT_NET, f"{net:,}", "자문대가(VAT별도)")
     rep(_AMOUNT_GROSS, f"{quote.grand_total:,}", "자문료(VAT포함)")
 
-    # 3) 자문기간 / 납부기한 / 계약체결일
+    # 3) 자문기간 / 납부기한
+    # 계약체결일("2026년 0월 0일" / "2026. 0. 0.")은 대학이 계약서를 받아
+    # 직접 기입하는 자리라 여기서 채우지 않고 템플릿 그대로 남겨둔다.
     months = _months(period_start, period_end)
     rep(_PERIOD_SENTENCE,
         f"{period_start.year}년 {period_start.month}월 {period_start.day}일부터 "
@@ -591,12 +595,6 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     rep(_PAYMENT_DUE,
         f"{payment_due.year}년 {payment_due.month}월 {payment_due.day}일",
         "납부기한")
-    rep(_CONTRACT_DATE_KOR,
-        f"{contract_date.year}년 {contract_date.month}월 {contract_date.day}일",
-        "계약체결일(표지)")
-    rep(_CONTRACT_DATE_DOT,
-        f"{contract_date.year}. {contract_date.month}. {contract_date.day}.",
-        "계약체결일(계획서)")
 
     # 4) 계약명 (U 단독이면 UICA 명칭)
     subject = subject_override(quote)

@@ -486,9 +486,7 @@ def test_generate_completion_report_needs_extra(tmp_path):
 # 자문 계약서 (HWP 전용, 등급별 자동 조정)
 # --------------------------------------------------------------------------- #
 def _contract_extra(**over):
-    raw = {"contract_date": "2026-08-20"}
-    raw.update(over)
-    return coerce_extra(["contract"], raw)
+    return coerce_extra(["contract"], dict(over))
 
 
 def _contract_texts(out_path):
@@ -608,15 +606,14 @@ def test_contract_registered_hwp_only():
     assert doc.supports_pdf is False            # 계약서는 HWP만
     assert template_path(doc).exists()
     keys = [f.key for f in doc.extra_fields]
-    assert keys[:4] == ["contract_date", "payment_due", "period_start", "period_end"]
-    assert doc.extra_fields[0].required is True
+    # 계약체결일은 대학이 직접 기입하는 자리라 입력 항목으로 받지 않는다
+    assert "contract_date" not in keys
+    assert keys[:3] == ["payment_due", "period_start", "period_end"]
 
 
-def test_contract_coerce_defaults_and_required():
-    with pytest.raises(ValueError):
-        coerce_extra(["contract"], {})           # 계약체결일 없음
-    got = coerce_extra(["contract"], {"contract_date": "2026-08-20"})
-    assert got["contract_date"] == date(2026, 8, 20)
+def test_contract_coerce_defaults_no_required_fields():
+    # 계약체결일을 요구하지 않으므로 빈 입력으로도 기본값이 채워진다
+    got = coerce_extra(["contract"], {})
     assert got["payment_due"] == date(2027, 2, 13)
     assert got["period_start"] == date(2026, 9, 1)
     assert got["period_end"] == date(2027, 1, 31)
@@ -639,9 +636,11 @@ def test_contract_kp1_up_combined(tmp_path):
     assert "Peer Benchmarking" not in joined
     # 설문기준: 한성대 엑셀값 200/50/50
     assert "재학생 200명 이상 교수 50명 이상, 직원 50명 이상" in joined
-    # 대학명 치환 완료 + 계약체결일
+    # 대학명 치환 완료
     assert "OO대학교" not in joined
-    assert "2026년 8월 20일" in joined
+    # 계약체결일은 대학이 직접 기입하는 자리라 placeholder 그대로 남는다
+    assert "2026년 0월 0일" in joined
+    assert "2026. 0. 0." in joined
     # 정상 파일 불변식: 메모는 실제 배포 양식처럼 그대로 두되(손상 방지),
     # 특이사항에 걸려있던 인라인 메모 2개만 정확히 제거된다.
     _assert_contract_structure_ok(recs)
