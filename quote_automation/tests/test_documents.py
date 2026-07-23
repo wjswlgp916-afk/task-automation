@@ -813,6 +813,22 @@ def _assert_exsupply_structure_ok(recs):
                 pos = struct.unpack_from("<II", cs.payload, k * 8)[0]
                 assert pos < tlen, f"글자모양 위치 범위초과 para {i}: {pos}>={tlen}"
 
+    # 회귀 방지: 긴 문단(예: 본문, 600자 안팎)을 다시 쓰면서 줄나눔(LINE_SEG)을
+    # "1줄"로 선언해버리면 한글이 모든 글자를 한 줄에 욱여넣어 겹쳐 그린다
+    # (실제로 겪은 손상). 100자를 넘는 문단은 반드시 2줄 이상으로 선언돼 있어야
+    # 한다 — LINE_SEG 를 아예 손대지 않는 한(권장 방식) 항상 만족된다.
+    for i, r in enumerate(recs):
+        if r.tag != 67:
+            continue
+        tlen = len(r.payload) // 2
+        if tlen <= 100:
+            continue
+        for j in range(i + 1, min(i + 4, len(recs))):
+            if recs[j].tag == 69:
+                segs = len(recs[j].payload) // 36
+                assert segs > 1, f"긴 문단(len={tlen})이 1줄로 선언됨 para {i} → 글자 겹침 위험"
+                break
+
 
 def test_exclusive_supply_registered():
     assert "exclusive_supply" in DOCUMENT_TYPES
@@ -823,7 +839,7 @@ def test_exclusive_supply_registered():
 
 
 def test_exclusive_supply_k_only_matches_reference(tmp_path):
-    """배재대학교 참고본과 동일한 문구 + UICA 관련 메모 5개 제거."""
+    """배재대학교 참고본과 동일한 문구 + 메모 전부 제거."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("배재대학교", "K_P_12", date(2025, 8, 28))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -834,12 +850,13 @@ def test_exclusive_supply_k_only_matches_reference(tmp_path):
     assert "2025. 8. 28." in joined
     assert "OO대학교" not in joined
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
-    assert memo == 1   # 계약명 자리의 메모(id=6)만 남고 본문 5개는 제거됨
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 
 def test_exclusive_supply_u_only_matches_reference(tmp_path):
-    """포항공과대학교 참고본과 동일한 문구 + 계약명 자동 변경."""
+    """포항공과대학교 참고본과 동일한 문구 + 계약명 자동 변경 + 메모 전부 제거."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("포항공과대학교", "U_P_1", date(2025, 9, 3))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -850,12 +867,14 @@ def test_exclusive_supply_u_only_matches_reference(tmp_path):
     assert "학부교육 실태조사(K-NSSE)" not in joined
     assert "2025. 9. 3." in joined
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
-    assert memo == 1
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 
-def test_exclusive_supply_combined_keeps_all_memos(tmp_path):
-    """K+U 결합이면 본문을 손대지 않고 대학명만 채운다 — 메모 6개 전부 유지."""
+def test_exclusive_supply_combined_removes_all_memos(tmp_path):
+    """K+U 결합이면 본문(눈에 보이는 글자)은 손대지 않고 대학명만 채우되,
+    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙)."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("한성대학교", "K_P_12+U_P_1", date(2025, 9, 10))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -865,7 +884,8 @@ def test_exclusive_supply_combined_keeps_all_memos(tmp_path):
     assert "한성대학교의 학부교육의 질과 성과, 혁신 역량 등에 대한" in joined
     assert "OO대학교" not in joined
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
-    assert memo == 6
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 

@@ -4,18 +4,22 @@
 본문 한 문단 안에 K-NSSE·UICA 관련 문구가 섞여 있고, 등급코드에 담긴
 도구 구성(K 단독/U 단독/K+U 결합)에 따라 본문이 통째로 달라진다.
 
-원본 양식은 K+U 결합 버전이며, 본문 문단 안의 UICA 관련 문구 5곳에
-안내 메모(개별 확인용)가 걸려 있다. K 단독일 때는 이 5곳을 포함해 본문이
-K-NSSE 만의 문구로 바뀌어야 하고(사용자가 준 배재대학교 참고본과 동일),
-U 단독일 때도 마찬가지로 UICA 만의 문구로 바뀐다(포항공과대학교 참고본과
-동일). 두 경우 모두, 그 5개 메모는 본문과 함께 사라져야 한다(제거 안 하면
-앵커 없는 메모만 남아 "파일 손상"이 난다 — 계약서에서 이미 겪은 문제).
+원본 양식은 K+U 결합 버전이며, 본문 문단 안의 UICA 관련 문구 5곳과 계약명
+문단에 안내 메모(6개, 모두 실무용 — 대학에 보여줄 필요 없음)가 걸려 있다.
+사용자 확정 규칙: 이 메모는 전부 삭제한다. K 단독일 때는 본문이 K-NSSE 만의
+문구로 바뀌고(배재대학교 참고본과 동일), U 단독일 때는 UICA 만의 문구로
+바뀐다(포항공과대학교 참고본과 동일).
 
-건명(자문계약명) 교체 규칙은 다른 서류와 동일: K 단독·결합은 기본값
-유지, U 단독은 "대학 혁신역량 진단 및 분석"으로 변경 — engine.subject_override
-공유. 계약명 자리에는 별도 안내 메모(id=6, "UICA만 시행할 경우 -> 계약명
-변경")가 있지만, 이건 값이 들어있는 문단 안쪽만 부분 치환(replace_literal)
-하므로 메모 마커를 건드리지 않아 그대로 둔다.
+건명(자문계약명) 교체 규칙은 다른 서류와 동일: K 단독·결합은 기본값 유지,
+U 단독은 "대학 혁신역량 진단 및 분석"으로 변경 — engine.subject_override 공유.
+
+구현 메모(중요): 문단 전체를 set_plain_text() 로 다시 쓸 때 원본의
+LINE_SEG(줄 나눔 정보)는 건드리지 않고 그대로 둔다. 처음에는 문단 전체가
+한 줄인 것처럼 1개 항목으로 축소했는데, 그러면 한글이 그 선언을 그대로
+믿어 모든 글자를 한 줄에 욱여넣어 겹쳐 그렸다(실제로 확인한 문제 — 표
+행 높이처럼 자동으로 다시 계산해주지 않았음). 반면 계약서의 특이사항
+문단처럼 LINE_SEG 를 아예 손대지 않고 텍스트만 바꾼 경우는 정상 동작했다
+(글자 수가 달라져도 문제 없었음) — 그 패턴을 그대로 따른다.
 
 발급일자는 quote.issue_date 로 채운다(확인서를 실제로 발급하는 날 —
 계약서의 '계약체결일'과 달리 대학이 나중에 기입하는 자리가 아니다).
@@ -39,20 +43,16 @@ from .engine import Quote, subject_override
 from .hwp_writer import (
     PARA_HEADER,
     PARA_TEXT,
-    PARA_CHAR_SHAPE,
-    PARA_LINE_SEG,
-    CTRL_HEADER,
-    MEMO_LIST,
     Record,
     parse_records,
     serialize_records,
     replace_literal_everywhere,
     set_plain_text,
+    strip_memo_controls,
     text_of,
 )
 
 _INSTITUTE = "성균관대학교 교육과미래연구소"
-_MEMO_CTRL_ID = b"knu%"
 
 # 원본 양식의 정확한 placeholder 리터럴
 _SUBJECT_DEFAULT = "학부교육의 질과 성과 진단 및 분석 "   # 계약명 자리(메모로 감싸여 있음, 끝 공백 포함)
@@ -84,10 +84,6 @@ _BODY_U_ONLY = (
     "사용해야 하는바 수의계약의 방법으로 자문 계약을 체결하고자 합니다."
 )
 
-# 본문 문단 안에서 UICA 관련 문구에 걸린 메모 5개의 ID(고정, 템플릿 구조상 불변)
-_BODY_MEMO_IDS = {1, 2, 3, 4, 5}
-
-
 class ExclusiveSupplyError(RuntimeError):
     pass
 
@@ -113,62 +109,13 @@ def _find_para(records: List[Record], needle: str):
     raise ExclusiveSupplyError(f"양식에서 '{needle}' 문단을 찾지 못했습니다.")
 
 
-def _drop_memos(records: List[Record], ids: set) -> None:
-    """지정한 ID 의 메모(CTRL_HEADER + MEMO_LIST)만 정확히 제거한다.
-
-    인라인 마커는 문단을 순수 텍스트로 다시 쓰면서 이미 사라졌다는 전제.
-    """
-    records[:] = [
-        r for r in records
-        if not (r.tag == CTRL_HEADER and r.payload[:4] == _MEMO_CTRL_ID
-                and struct.unpack("<I", r.payload[-4:])[0] in ids)
-    ]
-    out: List[Record] = []
-    i, n = 0, len(records)
-    while i < n:
-        r = records[i]
-        if r.tag == MEMO_LIST and struct.unpack("<I", r.payload[0:4])[0] in ids:
-            base = r.level
-            j = i + 1
-            while j < n and records[j].tag != MEMO_LIST and records[j].level >= base:
-                j += 1
-            i = j
-            continue
-        out.append(r)
-        i += 1
-    records[:] = out
-
-
-def _rewrite_body_paragraph(records: List[Record], hdr_idx: int, txt_idx: int,
-                            new_text: str) -> None:
-    """본문 문단을 완전히 새 텍스트로 바꾼다(메모 5개가 함께 사라지는 자리).
-
-    문단이 순수 텍스트가 되므로:
-      * PARA_HEADER 의 컨트롤 마스크([4:8])를 지운다(더 이상 필드 없음).
-      * 글자모양(CHAR_SHAPE)은 원래도 문단 전체에 단일 항목(위치 0)뿐이라
-        손댈 필요 없다(길이만 바뀌어도 위치 0 은 항상 유효).
-      * 줄나눔 정보(LINE_SEG)는 문단 전체가 한 줄인 것처럼 1개 항목으로
-        축소하고, 헤더의 줄 개수 필드([16:18])도 1로 맞춘다 — 실제 줄바꿈은
-        한글이 편집기에서 다시 계산한다(표 행 높이와 같은 이치).
-    """
-    hdr, txt = records[hdr_idx], records[txt_idx]
-    set_plain_text(hdr, txt, new_text)
-    hdr.payload = hdr.payload[0:4] + b"\x00\x00\x00\x00" + hdr.payload[8:]
-
-    ls = None
-    for j in range(txt_idx + 1, len(records)):
-        if records[j].tag == PARA_LINE_SEG:
-            ls = records[j]
-            break
-        if records[j].tag in (PARA_HEADER, PARA_TEXT):
-            break
-    if ls is not None and len(ls.payload) >= 36:
-        first_seg = bytearray(ls.payload[0:36])
-        struct.pack_into("<i", first_seg, 0, 0)   # chpos = 0
-        ls.payload = bytes(first_seg)
-        p = bytearray(hdr.payload)
-        struct.pack_into("<H", p, 16, 1)          # line_seg_count = 1
-        hdr.payload = bytes(p)
+def _rewrite_paragraph(records: List[Record], hdr_idx: int, txt_idx: int,
+                       new_text: str) -> None:
+    """문단을 완전히 새 텍스트로 바꾼다. LINE_SEG(줄 나눔 캐시)는 일부러
+    건드리지 않는다 — 계약서 특이사항 문단에서 검증된 것처럼, 글자 수가
+    달라져도 그대로 둬야 안전하다(억지로 1줄로 축소하면 한글이 모든 글자를
+    겹쳐 그린다: 실제로 겪은 문제)."""
+    set_plain_text(records[hdr_idx], records[txt_idx], new_text)
 
 
 def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = None,
@@ -190,19 +137,22 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
 
-    # 1) 계약명(자문계약명) — 문단 안 부분 치환이라 메모(id=6)는 그대로 둔다
+    # 0) 실무용 메모 6개(본문 UICA 문구 5개 + 계약명 자리 1개) 전부 제거.
+    #    감싸여 있던 문단은 순수 텍스트가 되어 보이는 글자는 그대로 남는다.
+    strip_memo_controls(records)
+
+    # 1) 계약명(자문계약명)
     subject = subject_override(quote)
     if subject:
         if replace_literal_everywhere(records, _SUBJECT_DEFAULT, f"{subject} ") != 1:
             raise ExclusiveSupplyError("양식에서 자문계약명 자리를 찾지 못했습니다.")
 
-    # 2) 본문 문단: 단일 도구면 통째로 다시 쓰고 UICA 관련 메모 5개를 제거,
-    #    K+U 결합이면 손대지 않는다(대학명은 3번 단계의 전역 치환으로 채워짐).
+    # 2) 본문 문단: 단일 도구면 통째로 다시 쓴다(K+U 결합이면 손대지 않고,
+    #    대학명은 3번 단계의 전역 치환으로 채워짐).
     if tools != {"K", "U"}:
         body = (_BODY_K_ONLY if tools == {"K"} else _BODY_U_ONLY).format(univ=quote.university)
         hdr_idx, txt_idx = _find_para(records, "성균관대학교 교육과미래연구소에서 수행하는")
-        _rewrite_body_paragraph(records, hdr_idx, txt_idx, body)
-        _drop_memos(records, _BODY_MEMO_IDS)
+        _rewrite_paragraph(records, hdr_idx, txt_idx, body)
 
     # 3) 대학명 (자문요청기관 줄 + K+U 결합일 때 본문 안 placeholder)
     if replace_literal_everywhere(records, _UNIV, quote.university) < 1:
