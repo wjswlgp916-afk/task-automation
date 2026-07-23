@@ -225,19 +225,37 @@ def strip_memo_controls(records: List[Record]) -> int:
     return removed
 
 
+_RANGE_TAG_ENTRY_SIZE = 12   # UINT32 시작 + UINT32 끝 + (RGB 3바이트 + 종류 1바이트)
+
+
 def strip_highlight_ranges(records: List[Record]) -> int:
     """템플릿 작성자가 "잊지 않으려고" 표시해둔 형광펜(하이라이트) 태그를 지운다.
 
     PARA_RANGE_TAG(tag=70) 레코드는 (문단 내 시작 위치, 끝 위치, RGB 색상+종류)
-    묶음을 담아 특정 글자 구간에 형광펜을 칠한다 — 실제로 확인해 보면 색상은
-    항상 노란색(ff ff 00), 종류 바이트는 0x02 로 고정되어 있다. 이 레코드는
-    순수한 시각적 표시일 뿐 문단 텍스트·구조에는 영향을 주지 않으므로,
-    레코드를 통째로 지우면 안전하게 하이라이트만 사라진다.
-    제거한 레코드 개수를 반환한다.
+    12바이트 항목을 하나 이상 담아 특정 글자 구간에 형광펜을 칠한다 — 실제로
+    확인해 보면 색상은 항상 노란색(ff ff 00), 종류 바이트는 0x02 로 고정.
+
+    주의: 해당 문단의 PARA_HEADER(payload[14:16])에 "이 문단에 범위 태그가
+    N개 있다"는 개수가 그대로 박혀 있다. 이 레코드만 지우고 개수를 갱신하지
+    않으면 한글이 문단을 파싱하다가 어긋나 "파일이 손상되었습니다" 오류가
+    난다 (실제로 겪음) — 그래서 반드시 소유 문단의 개수도 함께 줄여야 한다.
+    제거한 항목(entry) 개수를 반환한다.
     """
-    before = len(records)
+    removed = 0
+    for i, r in enumerate(records):
+        if r.tag != PARA_RANGE_TAG:
+            continue
+        entries = len(r.payload) // _RANGE_TAG_ENTRY_SIZE
+        for j in range(i - 1, -1, -1):
+            if records[j].tag == PARA_HEADER:
+                p = bytearray(records[j].payload)
+                cur = struct.unpack_from("<H", p, 14)[0]
+                struct.pack_into("<H", p, 14, max(0, cur - entries))
+                records[j].payload = bytes(p)
+                break
+        removed += entries
     records[:] = [r for r in records if r.tag != PARA_RANGE_TAG]
-    return before - len(records)
+    return removed
 
 
 # --------------------------------------------------------------------------- #

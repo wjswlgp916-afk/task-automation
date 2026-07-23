@@ -1,5 +1,6 @@
 """문서 종류(거래명세서 등) 등록·생성 검증 테스트."""
 
+import struct
 import sys
 import zlib
 from datetime import date
@@ -16,8 +17,29 @@ from quote_automation.engine import build_quote  # noqa: E402
 from quote_automation.generator import generate, GeneratedFile  # noqa: E402
 from quote_automation.hwp_writer import (  # noqa: E402
     render_hwp, parse_records, text_of, _split_cells, TABLE,
+    PARA_HEADER, PARA_TEXT, PARA_CHAR_SHAPE, PARA_LINE_SEG, PARA_RANGE_TAG,
 )
 from quote_automation import cfbf  # noqa: E402
+
+
+def _assert_para_header_range_counts_consistent(recs):
+    """PARA_HEADER 의 '범위 태그(형광펜) 개수' 필드가 실제 남아있는
+    PARA_RANGE_TAG 항목 수와 어긋나면 한글에서 '파일이 손상되었습니다'
+    오류가 난다 (실제로 겪은 버그) — strip_highlight_ranges() 가 하이라이트를
+    지우면서 이 개수도 함께 줄였는지 확인한다."""
+    for i, r in enumerate(recs):
+        if r.tag != PARA_HEADER:
+            continue
+        declared = struct.unpack("<H", r.payload[14:16])[0]
+        j = i + 1
+        if j < len(recs) and recs[j].tag == PARA_TEXT:
+            j += 1
+        actual = 0
+        while j < len(recs) and recs[j].tag in (PARA_CHAR_SHAPE, PARA_LINE_SEG, PARA_RANGE_TAG):
+            if recs[j].tag == PARA_RANGE_TAG:
+                actual += len(recs[j].payload) // 12
+            j += 1
+        assert declared == actual, f"문단 {i}: 선언된 범위 태그 수={declared}, 실제={actual}"
 
 
 def _guaranty_extra():
@@ -65,6 +87,7 @@ def test_transaction_statement_hwp_generates_and_validates(tmp_path, code):
     assert "견 적 서" not in joined
     # 원본 양식에 남아있던 형광펜(하이라이트) 자국도 산출물엔 없어야 한다
     assert not any(r.tag == 70 for r in recs)
+    _assert_para_header_range_counts_consistent(recs)
 
 
 def test_generate_produces_both_doc_types_with_correct_formats(tmp_path):
@@ -290,6 +313,7 @@ def test_inspection_hwp_table_matches_selection(tmp_path, code, expect_subject, 
     assert "호서대학교 귀하" in joined
     # 원본 양식에 남아있던 형광펜(하이라이트) 자국도 산출물엔 없어야 한다
     assert not any(r.tag == 70 for r in recs)
+    _assert_para_header_range_counts_consistent(recs)
 
 
 def test_inspection_hwp_rowspan_matches_addon_count(tmp_path):
@@ -427,6 +451,7 @@ def test_completion_report_no_leftover_highlight(tmp_path):
     sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
     recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
     assert not any(r.tag == 70 for r in recs)
+    _assert_para_header_range_counts_consistent(recs)
 
 
 def test_completion_report_missing_contract_date_raises(tmp_path):
