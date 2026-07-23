@@ -34,15 +34,17 @@ from .hwp_writer import (
     PARA_HEADER,
     PARA_TEXT,
     LIST_HEADER,
+    CTRL_HEADER,
+    MEMO_LIST,
     Record,
     parse_records,
     serialize_records,
     replace_literal_everywhere,
     set_plain_text,
-    strip_memo_controls,
-    strip_highlight_ranges,
     text_of,
 )
+
+_MEMO_CTRL_ID = b"knu%"
 
 # 기본값 (양식 그대로)
 DEFAULT_PERIOD_START = date_cls(2026, 9, 1)
@@ -67,6 +69,9 @@ _REPORT_BASIC = "대학별 보고서(excel 파일)"
 # 자문범위 앵커(고유 문구)
 _SCOPE_ANCHOR = "(대학 간 비교)"
 _DELIV_ANCHOR = "대학별 보고서"
+# 특이사항(설문기준) 문단 — 이 문단에는 인라인 메모 2개(재학생용·UICA용)가
+# ***/** 자리에 걸려 있다. 도구 구성에 따라 이 문단을 순수 텍스트로 다시 쓰고
+# 걸려 있던 그 2개 메모만 정확히 제거한다(다른 메모는 그대로 둔다).
 _NOTES_ANCHOR = "분석 결과의 타당성"
 
 
@@ -268,8 +273,56 @@ def _adjust_deliverables(records: List[Record], k_sel, u_sel) -> None:
             set_plain_text(hdr, tr, f"{prefix}{new}")
 
 
-def _edit_special_notes(records: List[Record], university: str, k_sel, u_sel,
+def _inline_memo_ids(rec: Record) -> List[int]:
+    """PARA_TEXT 안 인라인 메모의 ID 목록. 메모 끝 마커(0x04 로 시작하는 8워드
+    블록)의 6번째 워드에 메모 인스턴스 ID 가 들어있다."""
+    u = struct.unpack(f"<{len(rec.payload) // 2}H", rec.payload)
+    ids: List[int] = []
+    i = 0
+    while i < len(u):
+        if u[i] == 0x04 and i + 5 < len(u):
+            ids.append(u[i + 5])
+            i += 8
+        elif u[i] == 0x03:
+            i += 8
+        else:
+            i += 1
+    return ids
+
+
+def _drop_memos(records: List[Record], ids: set) -> None:
+    """지정한 ID 의 메모만 정확히 제거: 인라인 마커는 이미 문단을 순수 텍스트로
+    다시 써서 사라졌고, 여기서는 그 메모의 CTRL_HEADER 와 MEMO_LIST 블록을 지운다."""
+    # 1) CTRL_HEADER(knu%) 중 해당 ID 제거 (payload 끝 4바이트가 인스턴스 ID)
+    records[:] = [
+        r for r in records
+        if not (r.tag == CTRL_HEADER and r.payload[:4] == _MEMO_CTRL_ID
+                and struct.unpack("<I", r.payload[-4:])[0] in ids)
+    ]
+    # 2) MEMO_LIST 블록(그 안의 내용 문단 포함) 중 해당 ID 제거
+    out: List[Record] = []
+    i, n = 0, len(records)
+    while i < n:
+        r = records[i]
+        if r.tag == MEMO_LIST and struct.unpack("<I", r.payload[0:4])[0] in ids:
+            base = r.level
+            j = i + 1
+            while j < n and records[j].tag != MEMO_LIST and records[j].level >= base:
+                j += 1
+            i = j
+            continue
+        out.append(r)
+        i += 1
+    records[:] = out
+
+
+def _edit_special_notes(records: List[Record], k_sel, u_sel,
                         mins: survey_criteria.SurveyCriteria) -> None:
+    """특이사항을 순수 텍스트로 다시 쓰고, 그 문단에 걸린 인라인 메모 2개만 제거한다.
+
+    도구 구성에 따라: K+U → 재학생·교수·직원, K 단독 → 재학생, U 단독 → 교수·직원.
+    대학명(OO대학교)은 이후 전역 치환에서 함께 바뀐다.
+    """
     parts: List[str] = []
     if k_sel is not None:
         parts.append(f"재학생 {mins.k_respondents}명 이상")
@@ -277,12 +330,13 @@ def _edit_special_notes(records: List[Record], university: str, k_sel, u_sel,
         parts.append(f"교수 {mins.u_professors}명 이상, 직원 {mins.u_staff}명 이상")
     joined = " ".join(parts)
     text = (
-        f"분석 결과의 타당성과 신뢰성을 위해 {university}는 {joined}의 응답 자료를 "
-        f"확보해야 함. {university}와 자문책임자가 합의한 응답 자료를 확보하지 못할 시 "
+        f"분석 결과의 타당성과 신뢰성을 위해 {_UNIV}는 {joined}의 응답 자료를 "
+        f"확보해야 함. {_UNIV}와 자문책임자가 합의한 응답 자료를 확보하지 못할 시 "
         f"대학별 분석과 보고서가 제공되지 않을 수 있음"
     )
     for i, r in enumerate(records):
         if r.tag == PARA_TEXT and _NOTES_ANCHOR in text_of(r):
+            memo_ids = set(_inline_memo_ids(r))
             hdr = None
             for j in range(i - 1, -1, -1):
                 if records[j].tag == PARA_HEADER:
@@ -290,8 +344,11 @@ def _edit_special_notes(records: List[Record], university: str, k_sel, u_sel,
                     break
                 if records[j].tag == PARA_TEXT:
                     break
-            if hdr is not None:
-                set_plain_text(hdr, r, text)
+            if hdr is None:
+                raise ContractError("특이사항 문단 헤더를 찾지 못했습니다.")
+            set_plain_text(hdr, r, text)
+            if memo_ids:
+                _drop_memos(records, memo_ids)
             return
     raise ContractError("양식에서 특이사항(설문기준) 위치를 찾지 못했습니다.")
 
@@ -378,18 +435,20 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
 
-    # 1) 실무용 메모·형광펜 제거
-    strip_memo_controls(records)
-    strip_highlight_ranges(records)
+    # 주의: 이 양식의 '메모'(누름틀 필드)는 계약체결일·금액·설문기준 등 실무자가
+    # 채워야 할 자리에 안내로 붙어 있고, 실제 배포되는 정상 계약서에도 그대로
+    # 남아 있다(손으로 만든 정상 파일에 메모가 살아있는 것을 확인). 메모를
+    # 제거하면 오히려 "파일 손상" 오류가 나므로, 여기서는 메모를 건드리지 않고
+    # 내용만 부분 치환한다(replace_literal_everywhere 는 필드 마커를 보존).
 
-    # 2) 자문범위·제공자료·특이사항 조정 (대학명 치환 전에 수행)
+    # 1) 자문범위·제공자료·특이사항 조정 (대학명 치환 전에 수행)
     _rewrite_cell(records, _SCOPE_ANCHOR, _scope_decide(k_sel, u_sel))
     _renumber_scope(records, k_sel, u_sel)
     _rewrite_cell(records, _DELIV_ANCHOR, _deliv_decide(k_sel, u_sel))
     _adjust_deliverables(records, k_sel, u_sel)
-    _edit_special_notes(records, quote.university, k_sel, u_sel, mins)
+    _edit_special_notes(records, k_sel, u_sel, mins)
 
-    # 3) 금액
+    # 2) 금액
     net = round(quote.grand_total / 1.1)
     def rep(old, new, what):
         if replace_literal_everywhere(records, old, new) < 1:
@@ -397,7 +456,7 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     rep(_AMOUNT_NET, f"{net:,}", "자문대가(VAT별도)")
     rep(_AMOUNT_GROSS, f"{quote.grand_total:,}", "자문료(VAT포함)")
 
-    # 4) 자문기간 / 납부기한 / 계약체결일
+    # 3) 자문기간 / 납부기한 / 계약체결일
     months = _months(period_start, period_end)
     rep(_PERIOD_SENTENCE,
         f"{period_start.year}년 {period_start.month}월 {period_start.day}일부터 "
@@ -417,12 +476,12 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
         f"{contract_date.year}. {contract_date.month}. {contract_date.day}.",
         "계약체결일(계획서)")
 
-    # 5) 계약명 (U 단독이면 UICA 명칭)
+    # 4) 계약명 (U 단독이면 UICA 명칭)
     subject = subject_override(quote)
     if subject:
         rep(_SUBJECT, subject, "계약명")
 
-    # 6) 대학명 치환 (한 문단에 여러 번 나오는 경우까지 모두)
+    # 5) 대학명 치환 (한 문단에 여러 번 나오는 경우까지 모두)
     while replace_literal_everywhere(records, _UNIV, quote.university) > 0:
         pass
 

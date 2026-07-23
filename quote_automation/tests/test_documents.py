@@ -497,6 +497,30 @@ def _contract_texts(out_path):
     return recs, "\n".join(text_of(r) for r in recs if r.tag == 67)
 
 
+def _assert_contract_structure_ok(recs):
+    """계약서 정상 파일 불변식.
+
+    이 양식의 '메모'는 실무자가 채울 자리에 붙어 있고 실제 배포되는 정상
+    계약서에도 남아 있다(제거하면 오히려 '파일 손상'). 그래서 계약서는
+    메모를 그대로 두되:
+      * 필드(누름틀/메모) 시작·끝 마커(0x03/0x04) 총 개수가 균형을 이뤄야 하고
+        (한쪽만 남으면 = 댕글링 = 손상),
+      * 특이사항 문단은 순수 텍스트가 되어(인라인 메모 2개 제거) 마커가 없어야
+        하며,
+      * PARA_HEADER 의 범위 태그 수도 정합해야 한다.
+    """
+    begin = end = 0
+    for r in recs:
+        if r.tag == 67:
+            u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
+            begin += sum(1 for c in u if c == 0x03)
+            end += sum(1 for c in u if c == 0x04)
+            if "분석 결과의 타당성" in text_of(r):
+                assert 0x03 not in u and 0x04 not in u, "특이사항에 인라인 메모 잔존"
+    assert begin == end, f"필드 마커 불균형(begin={begin}, end={end}) = 파일 손상"
+    _assert_para_header_range_counts_consistent(recs)
+
+
 def test_contract_registered_hwp_only():
     assert "contract" in DOCUMENT_TYPES
     doc = DOCUMENT_TYPES["contract"]
@@ -538,9 +562,9 @@ def test_contract_kp1_up_combined(tmp_path):
     # 대학명 치환 완료 + 계약체결일
     assert "OO대학교" not in joined
     assert "2026년 8월 20일" in joined
-    # 실무 메모/형광펜 제거 + 손상 유발 없음
-    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
-    assert not any(r.tag in (70, 93) for r in recs)
+    # 정상 파일 불변식: 메모는 실제 배포 양식처럼 그대로 두되(손상 방지),
+    # 특이사항에 걸려있던 인라인 메모 2개만 정확히 제거된다.
+    _assert_contract_structure_ok(recs)
     _assert_para_header_range_counts_consistent(recs)
 
 
@@ -610,8 +634,7 @@ def test_contract_period_override_recomputes_months(tmp_path):
     "K_P_1+U_P", "K_P_12+U_P_1", "K_P_12+U_B", "K_B+U_P",
 ])
 def test_contract_all_valid_combos_integrity(tmp_path, code):
-    """유효한 모든 조합이 손상 없는 HWP(재직렬화 일치·범위태그 정합)를 만든다."""
-    import struct as _struct
+    """유효한 모든 조합이 손상 없는 HWP(재직렬화 일치·마커 균형·범위태그 정합)."""
     doc = DOCUMENT_TYPES["contract"]
     q = build_quote("한성대학교", code, date(2026, 7, 23))
     out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
@@ -620,8 +643,22 @@ def test_contract_all_valid_combos_integrity(tmp_path, code):
     data = zlib.decompress(sm[("BodyText", "Section0")], -15)
     recs = parse_records(data)
     assert serialize_records(recs) == data       # 재직렬화 일치 (손상 아님)
-    _assert_para_header_range_counts_consistent(recs)
-    assert not any(r.tag in (70, 93) for r in recs)
+    _assert_contract_structure_ok(recs)
+    # 형광펜(하이라이트)은 원본 계약서에 없음 → 산출물에도 없어야 한다
+    assert not any(r.tag == 70 for r in recs)
+
+
+def test_contract_keeps_process_memos_except_survey_notes(tmp_path):
+    """계약서는 실무 안내 메모를 그대로 두되(정상 배포 양식과 동일), 특이사항에
+    걸려있던 인라인 메모 2개(재학생/UICA)만 제거한다. 원본 12개 → 10개."""
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+    recs, _ = _contract_texts(out)
+    memos = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    memolists = sum(1 for r in recs if r.tag == 93)
+    assert memos == 10 and memolists == 10
+    _assert_contract_structure_ok(recs)
 
 
 def test_generate_contract_hwp_only_even_if_pdf_requested(tmp_path):
