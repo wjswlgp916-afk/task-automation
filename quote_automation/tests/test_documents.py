@@ -497,27 +497,60 @@ def _contract_texts(out_path):
     return recs, "\n".join(text_of(r) for r in recs if r.tag == 67)
 
 
-def _assert_contract_structure_ok(recs):
-    """계약서 정상 파일 불변식.
+_EIGHT_WIDE = {1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23}
 
-    이 양식의 '메모'는 실무자가 채울 자리에 붙어 있고 실제 배포되는 정상
-    계약서에도 남아 있다(제거하면 오히려 '파일 손상'). 그래서 계약서는
-    메모를 그대로 두되:
-      * 필드(누름틀/메모) 시작·끝 마커(0x03/0x04) 총 개수가 균형을 이뤄야 하고
-        (한쪽만 남으면 = 댕글링 = 손상),
-      * 특이사항 문단은 순수 텍스트가 되어(인라인 메모 2개 제거) 마커가 없어야
-        하며,
+
+def _assert_contract_structure_ok(recs):
+    """계약서 정상 파일 불변식(한글에서 손상 없이 열리는 최소 조건).
+
+    계약서는 실무 안내 메모 12개를 전부 제거한다. 메모가 잘못 남거나 마커가
+    짝 없이 남으면 '파일 손상'이 나므로:
+      * 메모 컨트롤(knu%)·메모 내용(MEMO_LIST)이 하나도 없어야 하고,
+      * 인라인 메모 마커(코드3/4 + 0x6d65)가 하나도 없어야 하며,
+      * 필드 시작/끝 마커(0x03/0x04) 총 개수가 균형을 이뤄야 하고,
+      * 글자모양(CHAR_SHAPE) 위치가 텍스트 길이를 넘지 않아야(범위 초과 = 손상)
+        하며 PARA_HEADER 의 개수 필드와 정합해야 하고,
       * PARA_HEADER 의 범위 태그 수도 정합해야 한다.
     """
-    begin = end = 0
+    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs), "메모 컨트롤 잔존"
+    assert not any(r.tag == 93 for r in recs), "메모 내용(MEMO_LIST) 잔존"
+    begin = end = memo_marks = 0
     for r in recs:
         if r.tag == 67:
             u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
             begin += sum(1 for c in u if c == 0x03)
             end += sum(1 for c in u if c == 0x04)
-            if "분석 결과의 타당성" in text_of(r):
-                assert 0x03 not in u and 0x04 not in u, "특이사항에 인라인 메모 잔존"
+            k = 0
+            while k < len(u):
+                if u[k] in (3, 4) and k + 1 < len(u) and u[k + 1] == 0x6D65:
+                    memo_marks += 1
+                    k += 8
+                elif u[k] in _EIGHT_WIDE:
+                    k += 8
+                else:
+                    k += 1
+    assert memo_marks == 0, "인라인 메모 마커 잔존"
     assert begin == end, f"필드 마커 불균형(begin={begin}, end={end}) = 파일 손상"
+    # 글자모양 위치가 텍스트 길이를 넘지 않고 개수 필드와 일치해야 한다
+    for i, r in enumerate(recs):
+        if r.tag != 66:
+            continue
+        txt = cs = None
+        for j in range(i + 1, min(i + 8, len(recs))):
+            if recs[j].tag == 67 and txt is None:
+                txt = recs[j]
+            if recs[j].tag == 68 and cs is None:
+                cs = recs[j]
+            if recs[j].tag == 66:
+                break
+        tlen = len(txt.payload) // 2 if txt else 0
+        declared = struct.unpack("<H", r.payload[12:14])[0]
+        if cs is not None and tlen > 0:
+            n = len(cs.payload) // 8
+            assert n == declared, f"글자모양 개수 불일치 para {i}"
+            for k in range(n):
+                pos = struct.unpack_from("<II", cs.payload, k * 8)[0]
+                assert pos < tlen, f"글자모양 위치 범위초과 para {i}: {pos}>={tlen}"
     _assert_para_header_range_counts_consistent(recs)
 
 
@@ -648,16 +681,19 @@ def test_contract_all_valid_combos_integrity(tmp_path, code):
     assert not any(r.tag == 70 for r in recs)
 
 
-def test_contract_keeps_process_memos_except_survey_notes(tmp_path):
-    """계약서는 실무 안내 메모를 그대로 두되(정상 배포 양식과 동일), 특이사항에
-    걸려있던 인라인 메모 2개(재학생/UICA)만 제거한다. 원본 12개 → 10개."""
+def test_contract_removes_all_staff_memos(tmp_path):
+    """계약서는 실무 안내 메모 12개(프로세스·기입/확인·설문기준 작성법 등)를
+    전부 제거한다. 여러 문단에 걸친 통지처 메모까지 안전하게 지운다."""
     doc = DOCUMENT_TYPES["contract"]
     q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
     out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
-    recs, _ = _contract_texts(out)
-    memos = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
-    memolists = sum(1 for r in recs if r.tag == 93)
-    assert memos == 10 and memolists == 10
+    recs, joined = _contract_texts(out)
+    assert sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%") == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
+    # 메모 내용(실무 안내 문구)이 본문에 흘러나오지 않아야 한다
+    assert "찾아 바꾸기" not in joined
+    assert "설문참여기준" not in joined
+    assert "드라이브" not in joined
     _assert_contract_structure_ok(recs)
 
 
