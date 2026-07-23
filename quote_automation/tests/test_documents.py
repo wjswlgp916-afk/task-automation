@@ -503,34 +503,61 @@ _EIGHT_WIDE = {1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23
 def _assert_contract_structure_ok(recs):
     """계약서 정상 파일 불변식(한글에서 손상 없이 열리는 최소 조건).
 
-    계약서는 실무 안내 메모 12개를 전부 제거한다. 메모가 잘못 남거나 마커가
-    짝 없이 남으면 '파일 손상'이 나므로:
-      * 메모 컨트롤(knu%)·메모 내용(MEMO_LIST)이 하나도 없어야 하고,
-      * 인라인 메모 마커(코드3/4 + 0x6d65)가 하나도 없어야 하며,
+    계약서는 실무 안내 메모(인쇄되지 않는 코멘트)를 그대로 두되, 특이사항에
+    걸려있던 인라인 메모 2개만 정확히 제거한다. 그리고 표에서 문단을 지운
+    행은 '높이 재계산' 속성을 켠다. 손상 없이 열리려면:
+      * 특이사항 문단에 인라인 메모 마커가 남지 않아야 하고,
+      * 남은 메모는 컨트롤(knu%)·인라인 마커·MEMO_LIST 개수가 서로 정합해야
+        하며(짝 없는 마커 = 손상),
       * 필드 시작/끝 마커(0x03/0x04) 총 개수가 균형을 이뤄야 하고,
-      * 글자모양(CHAR_SHAPE) 위치가 텍스트 길이를 넘지 않아야(범위 초과 = 손상)
-        하며 PARA_HEADER 의 개수 필드와 정합해야 하고,
+      * 자문범위 행의 칸들에 높이 재계산 비트(0x05000000)가 켜져 있어야 하며,
+      * 글자모양(CHAR_SHAPE) 위치가 텍스트 길이를 넘지 않고 개수 필드와 정합,
       * PARA_HEADER 의 범위 태그 수도 정합해야 한다.
     """
-    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs), "메모 컨트롤 잔존"
-    assert not any(r.tag == 93 for r in recs), "메모 내용(MEMO_LIST) 잔존"
-    begin = end = memo_marks = 0
+    import struct as _s
+    # 메모 정합: 인라인 메모 ID 집합 == CTRL_HEADER ID 집합 == MEMO_LIST ID 집합
+    inline_ids, notes_has_marker = [], False
+    begin = end = 0
     for r in recs:
-        if r.tag == 67:
-            u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
-            begin += sum(1 for c in u if c == 0x03)
-            end += sum(1 for c in u if c == 0x04)
-            k = 0
-            while k < len(u):
-                if u[k] in (3, 4) and k + 1 < len(u) and u[k + 1] == 0x6D65:
-                    memo_marks += 1
-                    k += 8
-                elif u[k] in _EIGHT_WIDE:
-                    k += 8
-                else:
-                    k += 1
-    assert memo_marks == 0, "인라인 메모 마커 잔존"
+        if r.tag != 67:
+            continue
+        u = _s.unpack(f"<{len(r.payload) // 2}H", r.payload)
+        begin += sum(1 for c in u if c == 0x03)
+        end += sum(1 for c in u if c == 0x04)
+        is_notes = "분석 결과의 타당성" in text_of(r)
+        k = 0
+        while k < len(u):
+            if u[k] == 0x04 and k + 5 < len(u) and u[k + 1] == 0x6D65:
+                inline_ids.append(u[k + 5])
+                if is_notes:
+                    notes_has_marker = True
+                k += 8
+            elif u[k] in (0x03,) and k + 1 < len(u) and u[k + 1] == 0x6D65:
+                if is_notes:
+                    notes_has_marker = True
+                k += 8
+            elif u[k] in _EIGHT_WIDE:
+                k += 8
+            else:
+                k += 1
+    ctrl_ids = [_s.unpack("<I", r.payload[-4:])[0] for r in recs
+                if r.tag == 71 and r.payload[:4] == b"knu%"]
+    memo_ids = [_s.unpack("<I", r.payload[0:4])[0] for r in recs if r.tag == 93]
+    assert not notes_has_marker, "특이사항에 인라인 메모 잔존"
+    assert sorted(set(inline_ids)) == sorted(ctrl_ids) == sorted(memo_ids), \
+        f"메모 정합 깨짐 inline={sorted(set(inline_ids))} ctrl={sorted(ctrl_ids)} memo={sorted(memo_ids)}"
     assert begin == end, f"필드 마커 불균형(begin={begin}, end={end}) = 파일 손상"
+
+    # 자문범위 행의 칸들에 높이 재계산 비트가 켜져 있어야 한다
+    from quote_automation import contract_writer as _cw
+    li, _, lvl = _cw._cell_region(recs, _cw._SCOPE_ANCHOR)
+    srow = _s.unpack("<H", recs[li].payload[10:12])[0]
+    for r in recs:
+        if r.tag == 72 and r.level == lvl and len(r.payload) >= 24:
+            if _s.unpack("<H", r.payload[10:12])[0] == srow:
+                fl = _s.unpack("<I", r.payload[4:8])[0]
+                assert (fl & 0x05000000) == 0x05000000, "자문범위 행 높이재계산 비트 미설정"
+
     # 글자모양 위치가 텍스트 길이를 넘지 않고 개수 필드와 일치해야 한다
     for i, r in enumerate(recs):
         if r.tag != 66:
@@ -544,12 +571,12 @@ def _assert_contract_structure_ok(recs):
             if recs[j].tag == 66:
                 break
         tlen = len(txt.payload) // 2 if txt else 0
-        declared = struct.unpack("<H", r.payload[12:14])[0]
+        declared = _s.unpack("<H", r.payload[12:14])[0]
         if cs is not None and tlen > 0:
             n = len(cs.payload) // 8
             assert n == declared, f"글자모양 개수 불일치 para {i}"
             for k in range(n):
-                pos = struct.unpack_from("<II", cs.payload, k * 8)[0]
+                pos = _s.unpack_from("<II", cs.payload, k * 8)[0]
                 assert pos < tlen, f"글자모양 위치 범위초과 para {i}: {pos}>={tlen}"
     _assert_para_header_range_counts_consistent(recs)
 
@@ -681,19 +708,22 @@ def test_contract_all_valid_combos_integrity(tmp_path, code):
     assert not any(r.tag == 70 for r in recs)
 
 
-def test_contract_removes_all_staff_memos(tmp_path):
-    """계약서는 실무 안내 메모 12개(프로세스·기입/확인·설문기준 작성법 등)를
-    전부 제거한다. 여러 문단에 걸친 통지처 메모까지 안전하게 지운다."""
+def test_contract_keeps_memos_except_survey_notes(tmp_path):
+    """계약서는 인쇄되지 않는 실무 안내 메모(10개)는 그대로 두고, 특이사항에
+    걸려있던 인라인 메모 2개(재학생용·UICA용)만 정확히 제거한다. 원본 12→10.
+    메모 내용은 본문 텍스트로 새어나오지 않는다(코멘트 영역에만 존재)."""
     doc = DOCUMENT_TYPES["contract"]
     q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
     out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
     recs, joined = _contract_texts(out)
-    assert sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%") == 0
-    assert sum(1 for r in recs if r.tag == 93) == 0
-    # 메모 내용(실무 안내 문구)이 본문에 흘러나오지 않아야 한다
-    assert "찾아 바꾸기" not in joined
-    assert "설문참여기준" not in joined
-    assert "드라이브" not in joined
+    assert sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%") == 10
+    assert sum(1 for r in recs if r.tag == 93) == 10
+    # 특이사항 문단에는 메모가 남지 않아야 한다(순수 텍스트로 다시 씀)
+    for r in recs:
+        if r.tag == 67 and "분석 결과의 타당성" in text_of(r):
+            u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
+            assert not any(u[k] in (3, 4) and k + 1 < len(u) and u[k + 1] == 0x6D65
+                           for k in range(len(u)))
     _assert_contract_structure_ok(recs)
 
 
