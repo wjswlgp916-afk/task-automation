@@ -728,16 +728,20 @@ def test_contract_all_valid_combos_integrity(tmp_path, code):
     assert not any(r.tag == 70 for r in recs)
 
 
-def test_contract_keeps_memos_except_survey_notes(tmp_path):
-    """계약서는 인쇄되지 않는 실무 안내 메모(10개)는 그대로 두고, 특이사항에
-    걸려있던 인라인 메모 2개(재학생용·UICA용)만 정확히 제거한다. 원본 12→10.
-    메모 내용은 본문 텍스트로 새어나오지 않는다(코멘트 영역에만 존재)."""
+def test_contract_keeps_memos_except_survey_notes_and_title(tmp_path):
+    """계약서는 인쇄되지 않는 실무 안내 메모(9개)는 그대로 두고,
+    ① 제목에 붙은 프로세스 체크리스트 메모(1개)와
+    ② 특이사항에 걸려있던 인라인 메모 2개(재학생용·UICA용)만 제거한다.
+    원본 12개 → 9개. 메모 내용은 본문 텍스트로 새어나오지 않는다."""
     doc = DOCUMENT_TYPES["contract"]
     q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
     out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
     recs, joined = _contract_texts(out)
-    assert sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%") == 10
-    assert sum(1 for r in recs if r.tag == 93) == 10
+    assert sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%") == 9
+    assert sum(1 for r in recs if r.tag == 93) == 9
+    assert "계약담당 연구원" not in joined and "프로세스" not in joined
+    # 제목은 메모 없이 순수 텍스트로 보존되어야 한다
+    assert "자문 계약서" in joined
     # 특이사항 문단에는 메모가 남지 않아야 한다(순수 텍스트로 다시 씀)
     for r in recs:
         if r.tag == 67 and "분석 결과의 타당성" in text_of(r):

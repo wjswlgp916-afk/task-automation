@@ -337,6 +337,76 @@ def _inline_memo_ids(rec: Record) -> List[int]:
     return ids
 
 
+def _strip_para_memo_markers(hdr: Record, txt: Record, cs: Optional[Record]) -> bool:
+    """한 문단에서 인라인 메모 마커(코드3/4 + word1=0x6d65)를 전부 제거하고
+    텍스트는 남긴다. 마커(8워드)가 빠지면서 글자 수·글자모양(CHAR_SHAPE) 위치가
+    앞으로 당겨지므로 이를 함께 보정한다(안 하면 위치가 텍스트 길이를 넘어가
+    '파일 손상'이 된다). 이 문단에 메모 마커가 있었으면 True."""
+    units = list(struct.unpack(f"<{len(txt.payload) // 2}H", txt.payload))
+    new: List[int] = []
+    removed_at: List[int] = []
+    i = 0
+    while i < len(units):
+        c = units[i]
+        if c in (3, 4) and i + 1 < len(units) and units[i + 1] == _MEMO_MARK_WORD1:
+            removed_at.append(i)
+            i += 8
+        elif c in _EIGHT_WIDE_CTRL:
+            new.extend(units[i:i + 8])   # 메모가 아닌 필드는 그대로 둔다
+            i += 8
+        else:
+            new.append(c)
+            i += 1
+    if not removed_at:
+        return False
+
+    txt.payload = b"".join(struct.pack("<H", u) for u in new)
+    (nchars,) = struct.unpack("<I", hdr.payload[0:4])
+    nchars = (nchars & 0x80000000) | (len(new) & 0x7FFFFFFF)
+    hdr.payload = struct.pack("<I", nchars) + hdr.payload[4:]
+
+    if cs is not None:
+        n = len(cs.payload) // 8
+        entries = [struct.unpack_from("<II", cs.payload, k * 8) for k in range(n)]
+        shifted: Dict[int, int] = {}
+        for pos, cid in entries:
+            removed_before = 8 * sum(1 for rp in removed_at if rp < pos)
+            np = max(0, pos - removed_before)
+            shifted[np] = cid
+        new_entries = sorted(shifted.items())
+        cs.payload = b"".join(struct.pack("<II", p, c) for p, c in new_entries)
+        hdr.payload = hdr.payload[:12] + struct.pack("<H", len(new_entries)) + hdr.payload[14:]
+    return True
+
+
+def _remove_memo(records: List[Record], memo_id: int) -> None:
+    """지정한 ID 의 메모 하나만 정확히 제거한다(그 문단의 인라인 마커 제거 +
+    글자모양 보정 + CTRL_HEADER/MEMO_LIST 제거). 다른 메모는 손대지 않는다."""
+    for i, r in enumerate(records):
+        if r.tag != PARA_TEXT or memo_id not in _inline_memo_ids(r):
+            continue
+        hdr = None
+        for j in range(i - 1, -1, -1):
+            if records[j].tag == PARA_HEADER:
+                hdr = records[j]
+                break
+            if records[j].tag == PARA_TEXT:
+                break
+        cs = None
+        for j in range(i + 1, len(records)):
+            if records[j].tag == PARA_CHAR_SHAPE:
+                cs = records[j]
+                break
+            if records[j].tag in (PARA_HEADER, PARA_TEXT):
+                break
+        if hdr is None:
+            raise ContractError(f"메모(id={memo_id}) 문단의 헤더를 찾지 못했습니다.")
+        _strip_para_memo_markers(hdr, r, cs)
+        _drop_memos(records, {memo_id})
+        return
+    raise ContractError(f"메모(id={memo_id}) 를 찾지 못했습니다.")
+
+
 def _drop_memos(records: List[Record], ids: set) -> None:
     """지정한 ID 의 메모만 정확히 제거한다(인라인 마커는 문단을 순수 텍스트로
     다시 쓰면서 이미 사라졌다는 전제). 해당 메모의 CTRL_HEADER 와 MEMO_LIST
@@ -484,9 +554,12 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     data = zlib.decompress(raw, -15) if compressed else raw
     records = parse_records(data)
 
-    # 실무 안내 메모(프로세스·기입/확인 등)는 인쇄되지 않는 한글 코멘트라 그대로
-    # 둔다(실제 배포되는 정상 계약서도 메모를 유지함). 특이사항에 걸린 메모 2개만
-    # 내용을 바꿔야 해서 그 문단 안에서 정확히 제거한다.
+    # 실무 안내 메모(기입/확인 등)는 인쇄되지 않는 한글 코멘트라 그대로 둔다
+    # (실제 배포되는 정상 계약서도 메모를 유지함). 다만 문서 제목에 붙은 메모
+    # 1번("계약담당 연구원 <프로세스>" 체크리스트)은 완성본에 남길 필요가 없어
+    # 제거한다. 특이사항에 걸린 메모 2개는 도구 구성별로 내용 자체가 달라져야
+    # 해서 그 문단 안에서 별도로 정확히 제거한다.
+    _remove_memo(records, 1)
 
     # 1) 자문범위·제공자료·특이사항 조정 (대학명 치환 전에 수행)
     _rewrite_cell(records, _SCOPE_ANCHOR, _scope_decide(k_sel, u_sel))
