@@ -147,6 +147,26 @@ def _group_hdr_rec(records: List[Record], group: List[int]) -> Optional[Record]:
     return None
 
 
+_LAST_PARA_BIT = 0x80000000  # PARA_HEADER 첫 DWORD의 최상위 비트: '이 목록의 마지막 문단' 표시
+
+
+def _fix_last_paragraph_flag(records: List[Record], kept_groups: List[List[int]]) -> None:
+    """셀 안 마지막으로 남은 문단에만 '마지막 문단' 비트를 세운다.
+
+    한글은 각 셀(문단 목록)의 마지막 문단 PARA_HEADER 에 이 비트를 표시해
+    둔다. 뒤쪽 문단을 통째로 지워 새로운 문단이 목록의 끝이 되면 이 비트를
+    옮겨주지 않는 한 한글이 "파일 손상"으로 판정한다(실측으로 확인한 문제).
+    """
+    for gi, g in enumerate(kept_groups):
+        hdr = _group_hdr_rec(records, g)
+        if hdr is None:
+            continue
+        (val,) = struct.unpack("<I", hdr.payload[0:4])
+        is_last = gi == len(kept_groups) - 1
+        new_val = (val | _LAST_PARA_BIT) if is_last else (val & ~_LAST_PARA_BIT)
+        hdr.payload = struct.pack("<I", new_val) + hdr.payload[4:]
+
+
 def _rewrite_cell(records: List[Record], needle: str, decide: Callable[[str, dict], bool]) -> None:
     """셀 안 문단들을 decide() 판정대로 남기고, LIST_HEADER 문단수를 갱신한다.
 
@@ -161,6 +181,8 @@ def _rewrite_cell(records: List[Record], needle: str, decide: Callable[[str, dic
         tr = _group_text_rec(records, g)
         if decide(text_of(tr) if tr else "", state):
             kept_groups.append(g)
+
+    _fix_last_paragraph_flag(records, kept_groups)
 
     new_slice: List[Record] = [records[list_idx]]
     for g in kept_groups:

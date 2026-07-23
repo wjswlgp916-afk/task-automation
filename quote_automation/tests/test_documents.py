@@ -558,6 +558,26 @@ def _assert_contract_structure_ok(recs):
                 fl = _s.unpack("<I", r.payload[4:8])[0]
                 assert (fl & 0x05000000) == 0x05000000, "자문범위 행 높이재계산 비트 미설정"
 
+    # 셀 안에서 문단을 지워 재구성한 곳(자문범위·제공자료)마다, 마지막으로
+    # 남은 문단에만 '마지막 문단' 비트(0x80000000)가 켜져 있어야 한다.
+    # 이 비트가 옛 위치에 남으면(또는 새 마지막 문단에 없으면) 한글이
+    # "파일이 손상되었습니다" 로 판정한다(실측으로 확인한 근본 원인).
+    for anchor in (_cw._SCOPE_ANCHOR, _cw._DELIV_ANCHOR):
+        li2, end2, lvl2 = _cw._cell_region(recs, anchor)
+        last_idx = None
+        highbit_count = 0
+        j = li2 + 1
+        while j < end2:
+            if recs[j].tag == 66 and recs[j].level == lvl2:
+                v = _s.unpack("<I", recs[j].payload[0:4])[0]
+                if v & 0x80000000:
+                    highbit_count += 1
+                last_idx = j
+            j += 1
+        assert highbit_count == 1, f"'마지막 문단' 비트 개수 이상({anchor}): {highbit_count}"
+        last_val = _s.unpack("<I", recs[last_idx].payload[0:4])[0]
+        assert last_val & 0x80000000, f"실제 마지막 문단에 비트 없음({anchor})"
+
     # 글자모양 위치가 텍스트 길이를 넘지 않고 개수 필드와 일치해야 한다
     for i, r in enumerate(recs):
         if r.tag != 66:
