@@ -54,6 +54,10 @@ def _inspection_extra():
 def _completion_extra(contract_date="2026-03-10"):
     return coerce_extra(["completion_report"], {"contract_date": contract_date})
 
+
+def _commencement_extra(contract_date="2026-03-10"):
+    return coerce_extra(["commencement"], {"contract_date": contract_date})
+
 ALL_CODES = [
     "K_B", "K_P", "K_P_1", "K_P_2", "K_P_12",
     "U_B", "U_P", "U_P_1",
@@ -953,3 +957,109 @@ def test_generate_exclusive_supply_hwp_and_pdf(tmp_path):
                      formats=["hwp", "pdf"], doc_types=["exclusive_supply"])
     assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
     assert all(f.path.is_file() for f in files)
+
+
+# --------------------------------------------------------------------------- #
+# 착수계 (HWP + PDF, 완료계와 계약년월일·완료기한 extra 키 공유)
+# --------------------------------------------------------------------------- #
+def test_commencement_registered_with_extra_fields():
+    assert "commencement" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["commencement"]
+    assert doc.label == "착수계"
+    assert doc.supports_pdf is True
+    assert template_path(doc).exists()
+    keys = [f.key for f in doc.extra_fields]
+    assert keys == ["contract_date", "completion_deadline"]
+    assert doc.extra_fields[0].required is True     # 계약년월일: 필수, 기본값 없음
+    assert doc.extra_fields[1].default == "2027-01-31"
+
+
+def test_coerce_extra_commencement_applies_defaults_and_requires_contract_date():
+    with pytest.raises(ValueError):
+        coerce_extra(["commencement"], {})
+    got = coerce_extra(["commencement"], {"contract_date": "2026-04-01"})
+    assert got["contract_date"] == date(2026, 4, 1)
+    assert got["completion_deadline"] == date(2027, 1, 31)
+
+
+def test_commencement_extra_fields_shared_with_completion_report():
+    """완료계와 함께 만들 때 계약년월일·완료기한을 두 번 입력하지 않도록,
+    extra_fields_for() 가 두 서류의 같은 key 를 중복 제거해야 한다."""
+    fields = extra_fields_for(["commencement", "completion_report"])
+    keys = [f.key for f in fields]
+    assert keys.count("contract_date") == 1
+    assert keys.count("completion_deadline") == 1
+
+
+@pytest.mark.parametrize("code,expect_subject", [
+    ("K_P_12", "학부교육의 질과 성과 진단 및 분석"),
+    ("U_P_1", "대학 혁신역량 진단 및 분석"),
+    ("K_P_12+U_P_1", "학부교육의 질과 성과 진단 및 분석"),
+])
+def test_commencement_hwp_fields(tmp_path, code, expect_subject):
+    doc = DOCUMENT_TYPES["commencement"]
+    q = build_quote("호서대학교", code, date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "s.hwp", None, extra=_commencement_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert f"용    역    명 : {expect_subject}" in joined
+    assert f"금  {q.grand_total // 10000}만 원(￦ {q.grand_total:,} )" in joined
+    assert "계 약 년 월 일 : 2026년   03월   10일" in joined
+    assert "완  료  기  한 : 2027년   01월   31일" in joined      # 기본값
+    assert "2026년   08월  15일" in joined                       # 발급일자(계약일과 별개)
+    assert "호서대학교 귀하" in joined
+    assert "OO대학교" not in joined
+
+
+def test_commencement_no_leftover_memo_controls(tmp_path):
+    doc = DOCUMENT_TYPES["commencement"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "s.hwp", None, extra=_commencement_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    from quote_automation.hwp_writer import serialize_records
+    assert serialize_records(recs) == data
+    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
+    assert not any(r.tag == 93 for r in recs)
+
+
+def test_commencement_no_leftover_highlight(tmp_path):
+    # 원본 착수계 양식은 대학명 자리("OO대학교 귀하")에 형광펜(노란 하이라이트)이
+    # 칠해져 있었다 — 산출물에는 남으면 안 됨.
+    doc = DOCUMENT_TYPES["commencement"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "s.hwp", None, extra=_commencement_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    assert not any(r.tag == 70 for r in recs)
+    _assert_para_header_range_counts_consistent(recs)
+
+
+def test_commencement_missing_contract_date_raises(tmp_path):
+    doc = DOCUMENT_TYPES["commencement"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    with pytest.raises(Exception):
+        doc.render_hwp(q, tmp_path / "s.hwp", None, extra=None)
+
+
+def test_commencement_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["commencement"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "s.pdf", extra=_commencement_extra())
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "착 수 계" in text
+    assert "7,700,000" in text
+    assert "호서대학교 귀하" in text
+
+
+def test_generate_commencement_needs_extra(tmp_path):
+    with pytest.raises(Exception):
+        generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                 doc_types=["commencement"], extra=None)
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     doc_types=["commencement"], extra=_commencement_extra())
+    assert len(files) == 2 and all(gf.path.is_file() for gf in files)

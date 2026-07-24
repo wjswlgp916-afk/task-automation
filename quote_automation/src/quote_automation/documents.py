@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import (
+    commencement_writer,
     completion_writer,
     contract_writer,
     exclusive_supply_writer,
@@ -156,6 +157,19 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
         render_hwp=exclusive_supply_writer.render_hwp,
         render_pdf=exclusive_supply_writer.render_pdf,
         template_filename="exclusive_supply_template.hwp",
+    ),
+    "commencement": DocumentType(
+        key="commencement",
+        label="착수계",
+        render_hwp=commencement_writer.render_hwp,
+        render_pdf=commencement_writer.render_pdf,
+        template_filename="commencement_template.hwp",
+        extra_fields=(
+            ExtraField("contract_date", "계약년월일", "date", required=True,
+                       help="대학마다 바뀌는 계약 체결일 (완료계와 공유)"),
+            ExtraField("completion_deadline", "완료기한", "date", default="2027-01-31",
+                       help="보통 고정 (필요시 수정, 완료계와 공유)"),
+        ),
     ),
 }
 
