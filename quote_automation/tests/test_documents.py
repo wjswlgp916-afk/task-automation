@@ -788,6 +788,22 @@ def test_contract_keeps_memos_except_survey_notes_and_title(tmp_path):
             u = struct.unpack(f"<{len(r.payload) // 2}H", r.payload)
             assert not any(u[k] in (3, 4) and k + 1 < len(u) and u[k + 1] == 0x6D65
                            for k in range(len(u)))
+
+
+def test_contract_memo_authors_replaced_with_institute_name(tmp_path):
+    """남아있는 메모(실무 기입 안내 등)의 작성자 이름은 개인 계정명(K_NAYEON,
+    user1 등) 대신 '교육과미래연구소'로 통일되어야 한다."""
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", "K_P_1+U_P", date(2026, 7, 23))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+    recs, _ = _contract_texts(out)
+    memo_ctrls = [r for r in recs if r.tag == 71 and r.payload[:4] == b"knu%"]
+    assert len(memo_ctrls) == 9
+    for r in memo_ctrls:
+        (strlen,) = struct.unpack_from("<H", r.payload, 9)
+        s = r.payload[11:11 + strlen * 2].decode("utf-16-le")
+        author = s.split("/")[5]
+        assert author == "교육과미래연구소", f"작성자 이름이 안 바뀜: {s!r}"
     _assert_contract_structure_ok(recs)
 
 

@@ -210,6 +210,38 @@ def replace_literal_everywhere(records: List[Record], old: str, new: str) -> int
 _MEMO_CTRL_ID = b"knu%"
 
 
+def set_memo_authors(records: List[Record], new_author: str) -> int:
+    """남아있는 메모(코멘트)들의 작성자 이름을 전부 ``new_author`` 로 바꾼다.
+
+    메모 CTRL_HEADER(id="knu%") 의 payload 는 다음 구조다(실측으로 확인):
+      ``4바이트 id + flags(4) + extra_attr(1) + strlen(2, UINT16)
+      + command(strlen*2바이트, UTF16-LE) + 나머지(타임스탬프 등, 안 건드림)``
+    ``command`` 문자열은 ``MEMO/65535/<메모ID>/<타임스탬프1>/<타임스탬프2>/
+    <작성자>/\\;;`` 형식의 '/'로 구분된 필드이고, 작성자는 6번째(인덱스 5)
+    필드다. 이 필드만 새 이름으로 바꾸고, 문자열 길이가 달라지므로 strlen
+    도 함께 갱신한다 — 나머지 바이트(타임스탬프 등)는 그대로 둔다.
+
+    바뀐 메모 개수를 반환한다(형식이 예상과 다른 메모는 안전하게 건너뜀).
+    """
+    count = 0
+    for r in records:
+        if r.tag != CTRL_HEADER or r.payload[:4] != _MEMO_CTRL_ID:
+            continue
+        p = r.payload
+        (strlen,) = struct.unpack_from("<H", p, 9)
+        s = p[11:11 + strlen * 2].decode("utf-16-le")
+        rest = p[11 + strlen * 2:]
+        parts = s.split("/")
+        if len(parts) < 6 or parts[0] != "MEMO":
+            continue
+        parts[5] = new_author
+        new_s = "/".join(parts)
+        new_bytes = new_s.encode("utf-16-le")
+        r.payload = p[:9] + struct.pack("<H", len(new_s)) + new_bytes + rest
+        count += 1
+    return count
+
+
 def strip_memo_controls(records: List[Record]) -> int:
     """문서에 남아있는 한글 메모(코멘트)를 찾아 제거한다.
 

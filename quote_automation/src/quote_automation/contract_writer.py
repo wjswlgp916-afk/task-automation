@@ -44,9 +44,14 @@ from .hwp_writer import (
     parse_records,
     serialize_records,
     replace_literal_everywhere,
+    set_memo_authors,
     set_plain_text,
     text_of,
 )
+
+# 남는 실무 메모(기입 안내 등)의 작성자 이름을 개인 계정명(K_NAYEON,
+# user1 등) 대신 통일된 기관명으로 표시한다.
+_MEMO_AUTHOR = "교육과미래연구소"
 
 _MEMO_CTRL_ID = b"knu%"
 # 인라인 메모 마커: 8워드 컨트롤 블록. 시작=코드3, 끝=코드4, 두 번째 워드가
@@ -597,6 +602,9 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     # 제거한다. 특이사항에 걸린 메모 2개는 도구 구성별로 내용 자체가 달라져야
     # 해서 그 문단 안에서 별도로 정확히 제거한다.
     _remove_memo(records, 1)
+
+    # 남은 메모(실무 기입 안내 등)는 개인 이름 대신 기관명으로 표시한다.
+    set_memo_authors(records, _MEMO_AUTHOR)
 
     # 1) 자문범위·제공자료·특이사항 조정 (대학명 치환 전에 수행)
     _rewrite_cell(records, _SCOPE_ANCHOR, _scope_decide(k_sel, u_sel))
