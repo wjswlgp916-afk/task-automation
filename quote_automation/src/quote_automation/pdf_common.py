@@ -51,12 +51,18 @@ class StampOverlay(Flowable):
     색상 키 마스크로 투명 처리해 글자가 비쳐 보이도록 한다.
     """
 
-    def __init__(self, path: str, size: float, x: float, overlap: float):
+    def __init__(self, path: str, size: float, x: float, overlap: float,
+                mask=STAMP_WHITE_MASK):
         super().__init__()
         self.path = path
         self.size = size          # 도장 한 변 길이
         self.x = x                # 프레임 왼쪽 기준 x
         self.overlap = overlap    # 위 줄로 겹쳐 올라갈 높이
+        # 흰 배경 RGB 이미지는 색상 키(STAMP_WHITE_MASK)로 흰 배경을
+        # 투명 처리해야 하지만, 이미 알파 채널로 투명 배경을 가진 PNG는
+        # 색상 키를 주면 오히려 검게 칠해진다 — 그런 이미지는 'auto' 를
+        # 넘겨 PIL 이 알파 채널을 그대로 쓰게 한다.
+        self.mask = mask
 
     def wrap(self, availWidth, availHeight):
         return (availWidth, max(0.0, self.size - self.overlap))
@@ -66,7 +72,7 @@ class StampOverlay(Flowable):
         # 위쪽 overlap 만큼 이전 줄에 겹쳐진다.
         self.canv.drawImage(
             self.path, self.x, 0, width=self.size, height=self.size,
-            mask=STAMP_WHITE_MASK, preserveAspectRatio=True,
+            mask=self.mask, preserveAspectRatio=True,
         )
 
 

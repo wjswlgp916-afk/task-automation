@@ -1116,3 +1116,107 @@ def test_generate_commencement_needs_extra(tmp_path):
     files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
                      doc_types=["commencement"], extra=_commencement_extra())
     assert len(files) == 2 and all(gf.path.is_file() for gf in files)
+
+
+# --------------------------------------------------------------------------- #
+# 정보보안/개인정보 서약서 (HWP + PDF, 자문 시작일을 계약서와 공유)
+# --------------------------------------------------------------------------- #
+def _pledge_extra(period_start="2026-09-05"):
+    return coerce_extra(["security_pledge"], {"period_start": period_start})
+
+
+def test_security_pledge_registered_with_extra_fields():
+    assert "security_pledge" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["security_pledge"]
+    assert doc.label == "정보보안/개인정보 서약서"
+    assert doc.supports_pdf is True
+    assert template_path(doc).exists()
+    keys = [f.key for f in doc.extra_fields]
+    assert keys == ["period_start"]
+    assert doc.extra_fields[0].default == "2026-09-01"
+    assert doc.extra_fields[0].required is False
+
+
+def test_security_pledge_extra_field_shared_with_contract():
+    """계약서와 자문 시작일을 두 번 입력하지 않도록 같은 key 를 쓴다."""
+    fields = extra_fields_for(["security_pledge", "contract"])
+    keys = [f.key for f in fields]
+    assert keys.count("period_start") == 1
+
+
+@pytest.mark.parametrize("code,expect_subject", [
+    ("K_P_12", "학부교육의 질과 성과 진단 및 분석"),
+    ("U_P_1", "대학 혁신역량 진단 및 분석"),
+    ("K_P_12+U_P_1", "학부교육의 질과 성과 진단 및 분석"),
+])
+def test_security_pledge_hwp_fields(tmp_path, code, expect_subject):
+    doc = DOCUMENT_TYPES["security_pledge"]
+    q = build_quote("호서대학교", code, date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "p.hwp", None, extra=_pledge_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    from quote_automation.hwp_writer import serialize_records
+    assert serialize_records(recs) == data
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert f"본인은 2026년 9월 5일부로 호서대학교 {expect_subject} 자문을 수행함에" in joined
+    assert "호서대학교 규정을 준수하겠습니다" in joined
+    assert "호서대학교 총장 귀하" in joined
+    assert "OO대학교" not in joined
+    # 서명 날짜는 대학이 직접 기입하는 자리라 손대지 않고 그대로 남는다
+    assert "20 년  월   일" in joined
+    # 업체/학교 서약자 정보는 대학과 무관하게 고정
+    assert "성균관대학교 산학협력단" in joined and "구 자 춘" in joined
+    assert "교육과미래연구소" in joined and "배 상 훈" in joined
+
+
+def test_security_pledge_default_period_start(tmp_path):
+    doc = DOCUMENT_TYPES["security_pledge"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "p.hwp", None, extra=_pledge_extra(period_start=None))
+    recs, joined = None, None
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert "2026년 9월 1일부로" in joined     # 기본값
+
+
+def test_security_pledge_no_stale_lineseg(tmp_path):
+    """본문 서약 문장은 원래 2줄이었다 — 값을 채운 뒤 낡은 LINE_SEG 를
+    정리하지 않으면 문서 보안설정 [높음]에서 파일이 열리지 않는다
+    (CLAUDE.md 0번 규칙)."""
+    doc = DOCUMENT_TYPES["security_pledge"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "p.hwp", None, extra=_pledge_extra())
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    for i, r in enumerate(recs):
+        if r.tag == 67 and "부로" in text_of(r):
+            for j in range(i + 1, len(recs)):
+                if recs[j].tag == PARA_LINE_SEG:
+                    pytest.fail("다시 쓴 문단에 낡은 LINE_SEG 가 남아있음")
+                if recs[j].tag in (PARA_HEADER, PARA_TEXT):
+                    break
+            return
+    pytest.fail("본문 서약 문장을 찾지 못함")
+
+
+def test_security_pledge_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["security_pledge"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "p.pdf", extra=_pledge_extra())
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "정보보안 / 개인정보 서약서" in text
+    assert "호서대학교 총장 귀하" in text
+    assert "배 상 훈" in text
+
+
+def test_generate_security_pledge_hwp_and_pdf(tmp_path):
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     formats=["hwp", "pdf"], doc_types=["security_pledge"])
+    assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
+    assert all(f.path.is_file() for f in files)
