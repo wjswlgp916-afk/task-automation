@@ -5,7 +5,7 @@
                   (K 단독·결합 유지, U 단독 변경)
   2. 계약금액   : 견적 합계와 자동 연동 -> "금  OOO만 원(￦ O,OOO,OOO )"
                   (완료계와 같은 만원 단위 숫자 표기, "금" 뒤 공백 2칸만 다름)
-  3. 계약년월일 : 대학마다 달라 매번 입력해야 함 (사용자 입력, extra, 필수).
+  3. 계약년월일 : 대학마다 다르지만 보통 9월 1일 (기본값, 필요시 수정).
                   완료계와 같은 계약이므로 extra 키를 ``contract_date`` 로
                   공유한다 — 완료계와 함께 만들 때 한 번만 입력하면 된다.
   4. 완료기한   : 보통 고정, 기본값 있음(2027-01-31). 완료계와 같은 extra 키
@@ -48,6 +48,7 @@ _DEADLINE_PLACEHOLDER = "2027년   1월   31일"
 _ISSUE_PLACEHOLDER = "2026년   0월  0일"
 _UNIV_PLACEHOLDER = "OO대학교"
 
+DEFAULT_CONTRACT_DATE = date_cls(2026, 9, 1)
 DEFAULT_DEADLINE = date_cls(2027, 1, 31)
 
 
@@ -73,10 +74,8 @@ def _man_amount_text(amount: int) -> str:
 
 def _dates(extra: Optional[dict]):
     extra = extra or {}
-    contract_date = extra.get("contract_date")
+    contract_date = extra.get("contract_date") or DEFAULT_CONTRACT_DATE
     completion_deadline = extra.get("completion_deadline") or DEFAULT_DEADLINE
-    if not contract_date:
-        raise CommencementError("착수계에는 계약년월일이 필요합니다.")
     return contract_date, completion_deadline
 
 

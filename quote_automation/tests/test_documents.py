@@ -398,15 +398,16 @@ def test_completion_report_registered_with_extra_fields():
     assert doc.supports_pdf is True
     keys = [f.key for f in doc.extra_fields]
     assert keys == ["contract_date", "commencement_date", "completion_deadline", "completion_date"]
-    assert doc.extra_fields[0].required is True     # 계약년월일: 필수, 기본값 없음
+    assert doc.extra_fields[0].required is False    # 계약년월일: 기본값 있음, 수정 가능
+    assert doc.extra_fields[0].default == "2026-09-01"
     assert doc.extra_fields[1].default == "2026-09-01"
     assert doc.extra_fields[2].default == "2027-01-31"
     assert doc.extra_fields[3].default == "2026-12-18"
 
 
-def test_coerce_extra_completion_report_applies_defaults_and_requires_contract_date():
-    with pytest.raises(ValueError):
-        coerce_extra(["completion_report"], {})
+def test_coerce_extra_completion_report_applies_defaults():
+    got = coerce_extra(["completion_report"], {})
+    assert got["contract_date"] == date(2026, 9, 1)     # 기본값
     got = coerce_extra(["completion_report"], {"contract_date": "2026-04-01"})
     assert got["contract_date"] == date(2026, 4, 1)
     assert got["commencement_date"] == date(2026, 9, 1)
@@ -458,11 +459,16 @@ def test_completion_report_no_leftover_highlight(tmp_path):
     _assert_para_header_range_counts_consistent(recs)
 
 
-def test_completion_report_missing_contract_date_raises(tmp_path):
+def test_completion_report_defaults_contract_date_when_missing(tmp_path):
+    """계약년월일은 기본값(9월 1일)이 있어, extra 를 안 줘도 그 값으로 채워
+    생성된다(대학마다 다르면 수정 가능하지만 강제 입력은 아님)."""
     doc = DOCUMENT_TYPES["completion_report"]
     q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
-    with pytest.raises(Exception):
-        doc.render_hwp(q, tmp_path / "c.hwp", None, extra=None)
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert "계 약 년 월 일 : 2026년   09월   01일" in joined
 
 
 def test_completion_report_pdf_renders(tmp_path):
@@ -477,10 +483,10 @@ def test_completion_report_pdf_renders(tmp_path):
     assert "호서대학교 총장 귀하" in text
 
 
-def test_generate_completion_report_needs_extra(tmp_path):
-    with pytest.raises(Exception):
-        generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
-                 doc_types=["completion_report"], extra=None)
+def test_generate_completion_report_without_extra_uses_defaults(tmp_path):
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     doc_types=["completion_report"], extra=None)
+    assert len(files) == 2 and all(gf.path.is_file() for gf in files)
     files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
                      doc_types=["completion_report"], extra=_completion_extra())
     assert len(files) == 2 and all(gf.path.is_file() for gf in files)
@@ -1023,13 +1029,14 @@ def test_commencement_registered_with_extra_fields():
     assert template_path(doc).exists()
     keys = [f.key for f in doc.extra_fields]
     assert keys == ["contract_date", "completion_deadline"]
-    assert doc.extra_fields[0].required is True     # 계약년월일: 필수, 기본값 없음
+    assert doc.extra_fields[0].required is False    # 계약년월일: 기본값 있음, 수정 가능
+    assert doc.extra_fields[0].default == "2026-09-01"
     assert doc.extra_fields[1].default == "2027-01-31"
 
 
-def test_coerce_extra_commencement_applies_defaults_and_requires_contract_date():
-    with pytest.raises(ValueError):
-        coerce_extra(["commencement"], {})
+def test_coerce_extra_commencement_applies_defaults():
+    got = coerce_extra(["commencement"], {})
+    assert got["contract_date"] == date(2026, 9, 1)     # 기본값
     got = coerce_extra(["commencement"], {"contract_date": "2026-04-01"})
     assert got["contract_date"] == date(2026, 4, 1)
     assert got["completion_deadline"] == date(2027, 1, 31)
@@ -1090,11 +1097,16 @@ def test_commencement_no_leftover_highlight(tmp_path):
     _assert_para_header_range_counts_consistent(recs)
 
 
-def test_commencement_missing_contract_date_raises(tmp_path):
+def test_commencement_defaults_contract_date_when_missing(tmp_path):
+    """계약년월일은 기본값(9월 1일)이 있어, extra 를 안 줘도 그 값으로 채워
+    생성된다(대학마다 다르면 수정 가능하지만 강제 입력은 아님)."""
     doc = DOCUMENT_TYPES["commencement"]
     q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
-    with pytest.raises(Exception):
-        doc.render_hwp(q, tmp_path / "s.hwp", None, extra=None)
+    out = doc.render_hwp(q, tmp_path / "s.hwp", None, extra=None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert "계 약 년 월 일 : 2026년   09월   01일" in joined
 
 
 def test_commencement_pdf_renders(tmp_path):
@@ -1109,10 +1121,10 @@ def test_commencement_pdf_renders(tmp_path):
     assert "호서대학교 귀하" in text
 
 
-def test_generate_commencement_needs_extra(tmp_path):
-    with pytest.raises(Exception):
-        generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
-                 doc_types=["commencement"], extra=None)
+def test_generate_commencement_without_extra_uses_defaults(tmp_path):
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     doc_types=["commencement"], extra=None)
+    assert len(files) == 2 and all(gf.path.is_file() for gf in files)
     files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
                      doc_types=["commencement"], extra=_commencement_extra())
     assert len(files) == 2 and all(gf.path.is_file() for gf in files)

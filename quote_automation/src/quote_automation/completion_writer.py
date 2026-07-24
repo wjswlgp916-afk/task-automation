@@ -5,7 +5,7 @@
                   (K 단독·결합 유지, U 단독 변경)
   2. 계약금액   : 견적 합계와 자동 연동 -> "금 OOO만 원(￦ O,OOO,OOO )"
                   (다른 서류와 달리 한글 금액이 아니라 만원 단위 숫자 표기)
-  3. 계약년월일 : 대학마다 달라 매번 입력해야 함 (사용자 입력, extra, 필수)
+  3. 계약년월일 : 대학마다 다르지만 보통 9월 1일 (기본값, 필요시 수정)
   4. 착수년월일 : 보통 고정, 기본값 있음 (사용자 입력, extra, 오버라이드 가능)
   5. 완료기한   : 보통 고정, 기본값 있음 (사용자 입력, extra, 오버라이드 가능)
   6. 완료년월일 : 보통 고정, 기본값 있음 (사용자 입력, extra, 오버라이드 가능)
@@ -60,6 +60,7 @@ _COMMENCEMENT_LABEL = "착 수 년 월 일"
 _DEADLINE_LABEL = "완  료  기  한"      # 글자 사이 두 칸 (완료년월일 라벨과 구분)
 _COMPLETION_LABEL = "완 료 년 월 일"    # 글자 사이 한 칸
 
+DEFAULT_CONTRACT_DATE = date_cls(2026, 9, 1)
 DEFAULT_COMMENCEMENT = date_cls(2026, 9, 1)
 DEFAULT_DEADLINE = date_cls(2027, 1, 31)
 DEFAULT_COMPLETION = date_cls(2026, 12, 18)
@@ -87,12 +88,10 @@ def _man_amount_text(amount: int) -> str:
 
 def _dates(extra: Optional[dict]):
     extra = extra or {}
-    contract_date = extra.get("contract_date")
+    contract_date = extra.get("contract_date") or DEFAULT_CONTRACT_DATE
     commencement_date = extra.get("commencement_date") or DEFAULT_COMMENCEMENT
     completion_deadline = extra.get("completion_deadline") or DEFAULT_DEADLINE
     completion_date = extra.get("completion_date") or DEFAULT_COMPLETION
-    if not contract_date:
-        raise CompletionError("완료계에는 계약년월일이 필요합니다.")
     return contract_date, commencement_date, completion_deadline, completion_date
 
 
