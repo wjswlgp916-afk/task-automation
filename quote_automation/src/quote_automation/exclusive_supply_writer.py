@@ -287,7 +287,7 @@ def render_pdf(quote: Quote, out_path: str | Path, extra: Optional[dict] = None)
     if _STAMP_PATH.exists():
         from reportlab.pdfbase.pdfmetrics import stringWidth
         text_w = stringWidth(_INSTITUTE, bold, 15)
-        center_x = (doc.width - text_w) / 2 + text_w * 0.72
+        center_x = (doc.width - text_w) / 2 + text_w * 0.95
         size = 20 * mm
         story.append(pdf_common.StampOverlay(str(_STAMP_PATH), size=size,
                                              x=center_x - size / 2, overlap=15 * mm))
