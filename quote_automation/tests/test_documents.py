@@ -895,9 +895,14 @@ def test_exclusive_supply_u_only_matches_reference(tmp_path):
 
 def test_exclusive_supply_combined_removes_all_memos(tmp_path):
     """K+U 결합이면 본문(눈에 보이는 글자)은 손대지 않고 대학명만 채우되,
-    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙). 본문 자체를
-    다시 쓰지 않으므로 원본 LINE_SEG(15 세그먼트)가 그대로 남아있어야
-    한다(건드릴 필요도, 지울 필요도 없음)."""
+    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙).
+
+    본문 문구 자체는 다시 쓰지 않지만, 메모 제거 자체가 본문 문단 안
+    인라인 필드 마커 5개를 지워 글자 수를 바꾼다 — 그 문단은 원래 15줄
+    (LINE_SEG 15 세그먼트)로 나뉘어 있었으므로, 그 캐시를 그대로 두면
+    K/U 단독과 마찬가지로 문서 보안설정 [높음]에서 파일이 열리지 않는다
+    (실측 확인). 그래서 render_hwp 는 도구 구성과 무관하게 메모 제거
+    직후 이 문단의 낡은 LINE_SEG 를 항상 지운다."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("한성대학교", "K_P_12+U_P_1", date(2025, 9, 10))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -909,7 +914,7 @@ def test_exclusive_supply_combined_removes_all_memos(tmp_path):
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
     assert memo == 0
     assert sum(1 for r in recs if r.tag == 93) == 0
-    assert _body_line_seg_segs(recs) is not None and _body_line_seg_segs(recs) > 1
+    assert _body_line_seg_segs(recs) is None, "메모 제거로 본문 글자 수가 바뀌었는데 낡은 LINE_SEG 가 남아있음"
     _assert_exsupply_structure_ok(recs)
 
 

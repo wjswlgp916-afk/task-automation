@@ -40,6 +40,14 @@ set_plain_text() 로 다시 쓰든, replace_literal_everywhere() 로 부분만
 글자를 한 줄에 겹쳐 그리는 손상이 나므로 — 이건 "개수 0(캐시 없음)"과는
 전혀 다른, 이미 겪어서 확인한 별개의 문제다.)
 
+⚠ 놓치기 쉬운 부분(K+U 결합에서도 실측으로 다시 겪음): strip_memo_controls()
+자체가 본문 문단 안 인라인 필드 마커 5개를 지우면서 이미 그 문단의 글자
+수를 바꾼다 — K/U 단독이면 뒤이어 본문을 통째로 다시 쓰면서 자연스럽게
+LINE_SEG 도 함께 정리되지만, K+U 결합은 본문 문구를 더 이상 건드리지
+않으므로 이 단계에서 정리해주지 않으면 낡은 LINE_SEG 가 그대로 남는다.
+그래서 render_hwp() 는 strip_memo_controls() 직후, 도구 구성과 무관하게
+본문 문단의 clear_stale_line_seg() 를 항상 한 번 호출한다.
+
 발급일자는 quote.issue_date 로 채운다(확인서를 실제로 발급하는 날 —
 계약서의 '계약체결일'과 달리 대학이 나중에 기입하는 자리가 아니다).
 """
@@ -164,6 +172,15 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     # 0) 실무용 메모 6개(본문 UICA 문구 5개 + 계약명 자리 1개) 전부 제거.
     #    감싸여 있던 문단은 순수 텍스트가 되어 보이는 글자는 그대로 남는다.
     strip_memo_controls(records)
+
+    # 0-1) 본문 문단은 메모 마커가 5개 제거되면서 글자 수가 바뀌었는데,
+    #    원래 15줄(LINE_SEG 15개)로 나뉜 문단이라 그 캐시를 그대로 두면
+    #    문서 보안설정 [높음]에서 파일이 열리지 않는다(실측 확인) — K/U
+    #    단독이면 아래 2)번에서 문단을 통째로 다시 쓰며 다시 한 번 정리
+    #    되지만, K+U 결합은 본문을 더 이상 건드리지 않으므로 여기서 반드시
+    #    정리해야 한다(도구 구성과 무관하게 항상 실행).
+    hdr_idx, _ = _find_para(records, "성균관대학교 교육과미래연구소에서 수행하는")
+    clear_stale_line_seg(records, hdr_idx)
 
     # 1) 계약명(자문계약명)
     subject = subject_override(quote)
