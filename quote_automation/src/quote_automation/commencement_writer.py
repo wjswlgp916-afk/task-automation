@@ -3,8 +3,8 @@
 바뀌는 항목:
   1. 용 역 명   : 견적서/대금청구서/각서/검수확인서/완료계와 동일 규칙
                   (K 단독·결합 유지, U 단독 변경)
-  2. 계약금액   : 견적 합계와 자동 연동 -> "금  OOO만 원(￦ O,OOO,OOO )"
-                  (완료계와 같은 만원 단위 숫자 표기, "금" 뒤 공백 2칸만 다름)
+  2. 계약금액   : 견적 합계와 자동 연동 -> "금 이백이십만원(￦ 2,200,000 )"
+                  (다른 서류들과 같은 한글 금액 표기)
   3. 계약년월일 : 대학마다 다르지만 보통 9월 1일 (기본값, 필요시 수정).
                   완료계와 같은 계약이므로 extra 키를 ``contract_date`` 로
                   공유한다 — 완료계와 함께 만들 때 한 번만 입력하면 된다.
@@ -39,6 +39,7 @@ from .hwp_writer import (
     parse_records, serialize_records, replace_literal_everywhere, strip_memo_controls,
     strip_highlight_ranges,
 )
+from .korean_num import number_to_korean_plain
 
 # 원본 양식의 정확한 placeholder 리터럴
 _SUBJECT = "학부교육의 질과 성과 진단 및 분석"
@@ -69,7 +70,9 @@ def _fmt_issue(d: date_cls) -> str:
 
 
 def _man_amount_text(amount: int) -> str:
-    return f"금  {amount // 10000}만 원(￦ {amount:,} )"
+    """다른 서류들과 같은 한글 금액 표기: '금 이백이십만원(￦ 2,200,000 )'."""
+    kor = number_to_korean_plain(amount)
+    return f"금 {kor}원(￦ {amount:,} )"
 
 
 def _dates(extra: Optional[dict]):

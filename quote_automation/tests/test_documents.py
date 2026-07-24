@@ -15,6 +15,7 @@ from quote_automation.documents import (  # noqa: E402
 )
 from quote_automation.engine import build_quote  # noqa: E402
 from quote_automation.generator import generate, GeneratedFile  # noqa: E402
+from quote_automation.korean_num import number_to_korean_plain  # noqa: E402
 from quote_automation.hwp_writer import (  # noqa: E402
     render_hwp, parse_records, text_of, _split_cells, TABLE,
     PARA_HEADER, PARA_TEXT, PARA_CHAR_SHAPE, PARA_LINE_SEG, PARA_RANGE_TAG,
@@ -428,7 +429,7 @@ def test_completion_report_hwp_fields(tmp_path, code, expect_subject):
     recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
     joined = " ".join(text_of(r) for r in recs if r.tag == 67)
     assert f"용    역    명 : {expect_subject}" in joined
-    assert f"{q.grand_total // 10000}만 원(￦ {q.grand_total:,} )" in joined
+    assert f"금 {number_to_korean_plain(q.grand_total)}원(￦ {q.grand_total:,} )" in joined
     assert "계 약 년 월 일 : 2026년   03월   10일" in joined
     assert "착 수 년 월 일 : 2026년   09월   01일" in joined     # 기본값
     assert "완  료  기  한 : 2027년   01월   31일" in joined       # 기본값
@@ -1064,7 +1065,7 @@ def test_commencement_hwp_fields(tmp_path, code, expect_subject):
     recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
     joined = " ".join(text_of(r) for r in recs if r.tag == 67)
     assert f"용    역    명 : {expect_subject}" in joined
-    assert f"금  {q.grand_total // 10000}만 원(￦ {q.grand_total:,} )" in joined
+    assert f"금 {number_to_korean_plain(q.grand_total)}원(￦ {q.grand_total:,} )" in joined
     assert "계 약 년 월 일 : 2026년   03월   10일" in joined
     assert "완  료  기  한 : 2027년   01월   31일" in joined      # 기본값
     assert "2026년   08월  15일" in joined                       # 발급일자(계약일과 별개)
