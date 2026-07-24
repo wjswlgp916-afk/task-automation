@@ -175,7 +175,7 @@ def render_pdf(quote: Quote, out_path: str | Path, extra: Optional[dict] = None)
     story.append(Paragraph(_fmt_issue(quote.issue_date), st["center"]))
     story.append(Spacer(1, 16 * mm))
 
-    _NBSP = " "
+    _NBSP = "\xa0"
     ceo_value = "구 자 춘" + _NBSP * 10 + "(인)"
     issuer = Table(
         [
