@@ -766,17 +766,6 @@ def _exsupply_texts(out_path):
     return recs, "\n".join(text_of(r) for r in recs if r.tag == 67)
 
 
-def _norm(s: str) -> str:
-    """연속 공백을 한 칸으로 뭉갠다.
-
-    본문 편집이 메모 필드 마커의 절대 위치를 지키기 위해 지운 자리를
-    공백으로 채우므로(같은 글자 수 유지 — 문서 보안설정 [높음] 대응,
-    exclusive_supply_writer 모듈 docstring 참고), 실제 생성된 텍스트에는
-    참고 문서에 없는 공백이 섞여 있다. 문구 자체가 맞는지만 확인할 때는
-    공백을 정규화하고 비교한다."""
-    return " ".join(s.split())
-
-
 def _assert_exsupply_structure_ok(recs):
     """메모 정합성(인라인 id == CTRL_HEADER id == MEMO_LIST id), 필드 마커
     균형, 글자모양 위치·개수 정합을 확인한다(계약서에서 겪은 손상 패턴과 동일)."""
@@ -803,21 +792,6 @@ def _assert_exsupply_structure_ok(recs):
     assert sorted(set(inline_ids)) == sorted(ctrl_ids) == sorted(memo_ids), \
         f"메모 정합 깨짐 inline={sorted(set(inline_ids))} ctrl={sorted(ctrl_ids)} memo={sorted(memo_ids)}"
     assert begin == end, f"필드 마커 불균형(begin={begin}, end={end}) = 파일 손상"
-
-    # 문서 보안설정 [높음] 대응 회귀 방지: 이 서류의 메모 앵커(CTRL_HEADER)
-    # 6개는 어떤 도구 조합이든 절대 지워지면 안 된다(지우면 높음 보안에서
-    # 파일이 열리지 않음 — 실측 확인). MEMO_LIST(메모 내용) 안 문단도 완전히
-    # 빈 문자열이면 그 자체로 파일이 손상되므로, 항상 글자가 1개 이상 있어야
-    # 한다(공백 1개도 인정 — "내용을 안 보이게" 비우는 유일한 안전한 방법).
-    assert sorted(ctrl_ids) == [1, 2, 3, 4, 5, 6], f"메모 앵커가 지워짐: {sorted(ctrl_ids)}"
-    for i, r in enumerate(recs):
-        if r.tag != 93:
-            continue
-        for j in range(i + 1, len(recs)):
-            if recs[j].tag == 93:
-                break
-            if recs[j].tag == 67:
-                assert len(recs[j].payload) > 0, "MEMO_LIST 문단이 완전히 비어있음 → 파일 손상 위험"
 
     for i, r in enumerate(recs):
         if r.tag != 66:
@@ -864,80 +838,49 @@ def test_exclusive_supply_registered():
     assert template_path(doc).exists()
 
 
-def _memo_ctrl_ids(recs):
-    return sorted(struct.unpack("<I", r.payload[-4:])[0] for r in recs
-                  if r.tag == 71 and r.payload[:4] == b"knu%")
-
-
-def _memo_note_texts(recs):
-    """MEMO_LIST(메모 내용) 안 문단들의 텍스트 목록."""
-    out = []
-    for i, r in enumerate(recs):
-        if r.tag != 93:
-            continue
-        for j in range(i + 1, len(recs)):
-            if recs[j].tag == 93:
-                break
-            if recs[j].tag == 67:
-                out.append(text_of(recs[j]))
-    return out
-
-
 def test_exclusive_supply_k_only_matches_reference(tmp_path):
-    """배재대학교 참고본과 같은 취지의 K-NSSE 단독 문구가 되어야 한다.
+    """배재대학교 참고본과 동일한 문구 + 메모 전부 제거.
 
-    메모 앵커(CTRL_HEADER)는 문서 보안설정 [높음] 대응을 위해 절대 지우지
-    않으므로(exclusive_supply_writer 모듈 docstring 참고), 메모가 감싸던
-    UICA 구간 자리에는 원문과 같은 길이의 공백이 남는다 — 정확히 같은
-    문구는 아니지만(공백 정규화 후 비교), 뜻은 참고본과 같다."""
+    한글이 메모를 직접 삭제할 때도 CTRL_HEADER/MEMO_LIST 를 통째로 지우고
+    감싸여 있던 텍스트는 그대로 두는 것을 실측(사용자가 한글에서 직접
+    메모 삭제 후 저장한 파일과 원본을 바이트 비교)으로 확인했으므로,
+    strip_memo_controls() 의 완전 제거 방식이 한글 자신의 동작과 구조적으로
+    같다 — 문서 보안설정 [높음]에서도 문제없이 열린다."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("배재대학교", "K_P_12", date(2025, 8, 28))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
     recs, joined = _exsupply_texts(out)
-    norm = _norm(joined)
-    assert "자문계약명 : 학부교육의 질과 성과 진단 및 분석" in norm
-    assert "학부교육 실태조사(K-NSSE)와 를 진단도구로 사용하고 있습니다" in norm
-    assert "이에 배재대학교의 학부교육의 질과 성과, 등에 대한" in norm
+    assert "자문계약명 : 학부교육의 질과 성과 진단 및 분석" in joined
+    assert "학부교육 실태조사(K-NSSE)와를 진단도구로 사용하고 있습니다" in joined
     assert "대학 혁신역량 진단조사(UICA)" not in joined
-    assert "혁신 역량" not in joined
     assert "2025. 8. 28." in joined
     assert "OO대학교" not in joined
-    # 메모 앵커는 6개 그대로(절대 건드리지 않음), 내용만 공백으로 비워짐.
-    assert _memo_ctrl_ids(recs) == [1, 2, 3, 4, 5, 6]
-    assert sum(1 for r in recs if r.tag == 93) == 6
-    assert all(t.strip() == "" and t != "" for t in _memo_note_texts(recs))
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 
 def test_exclusive_supply_u_only_matches_reference(tmp_path):
-    """포항공과대학교 참고본과 같은 취지의 UICA 단독 문구가 되어야 한다.
-
-    UICA 관련 메모 구간(본문 안 5곳)은 전혀 건드리지 않으므로 이 경우는
-    참고본과 완전히 같은 문구가 나온다(제목 인용구만 길이를 맞추려고
-    끝에 공백 1개가 남는다)."""
+    """포항공과대학교 참고본과 동일한 문구 + 계약명 자동 변경 + 메모 전부 제거."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("포항공과대학교", "U_P_1", date(2025, 9, 3))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
     recs, joined = _exsupply_texts(out)
-    norm = _norm(joined)
-    assert "자문계약명 : 대학 혁신역량 진단 및 분석" in norm
+    assert "자문계약명 : 대학 혁신역량 진단 및 분석" in joined
     assert "학부교육의 질과 성과" not in joined
+    assert "대학 혁신역량 진단조사(UICA)를 진단도구로 사용하고 있습니다" in joined
     assert "학부교육 실태조사(K-NSSE)" not in joined
-    assert "대학 혁신역량 진단조사(UICA)를 진단도구로 사용하고 있습니다" in norm
-    assert "이에 포항공과대학교의 혁신 역량 등에 대한 자문을" in norm
     assert "2025. 9. 3." in joined
-    # 메모 앵커/내용 어느 쪽도 건드리지 않음(K-NSSE 단독과 달리 5곳 다 원본 그대로).
-    assert _memo_ctrl_ids(recs) == [1, 2, 3, 4, 5, 6]
-    assert sum(1 for r in recs if r.tag == 93) == 6
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 
-def test_exclusive_supply_combined_blanks_memo_notes_only(tmp_path):
-    """K+U 결합이면 본문(눈에 보이는 글자)은 손대지 않고 대학명만 채운다.
-
-    메모는 대학에 보일 필요가 없으므로(사용자 확정 규칙) "내용"만 안 보이게
-    비우되, 앵커(CTRL_HEADER)는 절대 건드리지 않는다 — 앵커를 지우면 문서
-    보안설정 [높음]에서 파일이 열리지 않기 때문(실측 확인)."""
+def test_exclusive_supply_combined_removes_all_memos(tmp_path):
+    """K+U 결합이면 본문(눈에 보이는 글자)은 손대지 않고 대학명만 채우되,
+    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙)."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("한성대학교", "K_P_12+U_P_1", date(2025, 9, 10))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -946,9 +889,9 @@ def test_exclusive_supply_combined_blanks_memo_notes_only(tmp_path):
     assert "학부교육 실태조사(K-NSSE)와 대학 혁신역량 진단조사(UICA)를 진단도구로" in joined
     assert "한성대학교의 학부교육의 질과 성과, 혁신 역량 등에 대한" in joined
     assert "OO대학교" not in joined
-    assert _memo_ctrl_ids(recs) == [1, 2, 3, 4, 5, 6]
-    assert sum(1 for r in recs if r.tag == 93) == 6
-    assert all(t.strip() == "" and t != "" for t in _memo_note_texts(recs))
+    memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
+    assert memo == 0
+    assert sum(1 for r in recs if r.tag == 93) == 0
     _assert_exsupply_structure_ok(recs)
 
 
