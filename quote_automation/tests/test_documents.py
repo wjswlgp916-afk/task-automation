@@ -731,6 +731,43 @@ def test_contract_all_valid_combos_integrity(tmp_path, code):
     assert not any(r.tag == 70 for r in recs)
 
 
+@pytest.mark.parametrize("code", ["K_P_12+U_P_1", "K_P_12", "U_P_1", "K_P+U_B", "K_B+U_P"])
+def test_contract_rewritten_multiline_paragraphs_clear_stale_lineseg(tmp_path, code):
+    """문서 보안설정 [높음] 회귀 방지.
+
+    원본 계약서 양식에서 특이사항(4줄)·제공자료의 "대학별 보고서(...)"
+    문구(2줄)·자문범위/제공자료의 재번호되는 항목들은 원래 LINE_SEG 가
+    2개 이상으로 나뉘어 있었다. set_plain_text() 로 다시 쓰면서 글자 수가
+    바뀌는데 그 낡은 캐시를 그대로 두면 문서 보안설정 [높음]에서 파일이
+    열리지 않는다(exclusive_supply_writer 에서 실측 확인한 것과 동일한
+    버그, CLAUDE.md 0번 규칙). _renumber_scope/_adjust_deliverables/
+    _edit_special_notes 가 clear_stale_line_seg() 로 정리하는지 확인한다."""
+    doc = DOCUMENT_TYPES["contract"]
+    q = build_quote("한성대학교", code, date(2026, 7, 23))
+    out = doc.render_hwp(q, tmp_path / "c.hwp", None, extra=_contract_extra())
+    recs, joined = _contract_texts(out)
+
+    def lineseg_segs(i):
+        for j in range(i + 1, min(i + 6, len(recs))):
+            if recs[j].tag == PARA_LINE_SEG:
+                return len(recs[j].payload) // 36
+            if recs[j].tag == PARA_TEXT:
+                return None
+        return None
+
+    checked = 0
+    for i, r in enumerate(recs):
+        if r.tag != PARA_TEXT:
+            continue
+        t = text_of(r)
+        if "분석 결과의 타당성" in t or ("대학별 보고서(" in t and len(t) > 30):
+            checked += 1
+            assert lineseg_segs(i) is None, (
+                f"다시 쓴 문단에 낡은 LINE_SEG 가 남아있음(보안설정 [높음] 위험): {t[:40]!r}"
+            )
+    assert checked >= 1, "검사 대상 문단을 찾지 못함(양식이 바뀌었을 수 있음)"
+
+
 def test_contract_keeps_memos_except_survey_notes_and_title(tmp_path):
     """계약서는 인쇄되지 않는 실무 안내 메모(9개)는 그대로 두고,
     ① 제목에 붙은 프로세스 체크리스트 메모(1개)와

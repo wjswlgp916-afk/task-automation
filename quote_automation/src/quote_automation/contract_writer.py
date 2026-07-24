@@ -40,6 +40,7 @@ from .hwp_writer import (
     CTRL_HEADER,
     MEMO_LIST,
     Record,
+    clear_stale_line_seg,
     parse_records,
     serialize_records,
     replace_literal_everywhere,
@@ -149,6 +150,13 @@ def _group_hdr_rec(records: List[Record], group: List[int]) -> Optional[Record]:
     return None
 
 
+def _group_hdr_idx(group: List[int], records: List[Record]) -> Optional[int]:
+    for i in group:
+        if records[i].tag == PARA_HEADER:
+            return i
+    return None
+
+
 _LAST_PARA_BIT = 0x80000000  # PARA_HEADER 첫 DWORD의 최상위 비트: '이 목록의 마지막 문단' 표시
 
 
@@ -254,6 +262,7 @@ def _renumber_scope(records: List[Record], k_sel, u_sel) -> None:
     groups = _cell_groups(records, list_idx, end, lvl)
     sec_no = 0
     item_no = 0
+    rewritten_hdr_idx: List[int] = []
     for g in groups:
         hdr = _group_hdr_rec(records, g)
         tr = _group_text_rec(records, g)
@@ -273,6 +282,16 @@ def _renumber_scope(records: List[Record], k_sel, u_sel) -> None:
             if m:
                 item_no += 1
                 set_plain_text(hdr, tr, f"  {item_no}) {m.group(1)}")
+            else:
+                continue
+        rewritten_hdr_idx.append(_group_hdr_idx(g, records))
+
+    # 글자 수가 바뀐 문단들의 낡은 LINE_SEG 를 정리한다(2줄 이상이던 문단만
+    # 손을 댐). clear_stale_line_seg 는 레코드를 지울 수 있어 뒤쪽 인덱스가
+    # 밀리므로, 반드시 인덱스가 큰 것부터(역순으로) 처리한다.
+    for hdr_idx in sorted(rewritten_hdr_idx, reverse=True):
+        if hdr_idx is not None:
+            clear_stale_line_seg(records, hdr_idx)
 
 
 def _adjust_deliverables(records: List[Record], k_sel, u_sel) -> None:
@@ -281,6 +300,7 @@ def _adjust_deliverables(records: List[Record], k_sel, u_sel) -> None:
     groups = _cell_groups(records, list_idx, end, lvl)
     sec_no = 0
     cur_grade = None
+    rewritten_hdr_idx: List[int] = []
     for g in groups:
         hdr = _group_hdr_rec(records, g)
         tr = _group_text_rec(records, g)
@@ -300,6 +320,14 @@ def _adjust_deliverables(records: List[Record], k_sel, u_sel) -> None:
             m = re.match(r"^\s*(\d+\))\s*", t)
             prefix = m.group(1) + " " if m else "1) "
             set_plain_text(hdr, tr, f"{prefix}{new}")
+        else:
+            continue
+        rewritten_hdr_idx.append(_group_hdr_idx(g, records))
+
+    # _renumber_scope 와 같은 이유로 낡은 LINE_SEG 를 지운다(역순 처리 필수).
+    for hdr_idx in sorted(rewritten_hdr_idx, reverse=True):
+        if hdr_idx is not None:
+            clear_stale_line_seg(records, hdr_idx)
 
 
 def _mark_row_recompute(records: List[Record], anchor: str) -> None:
@@ -458,16 +486,23 @@ def _edit_special_notes(records: List[Record], k_sel, u_sel,
     for i, r in enumerate(records):
         if r.tag == PARA_TEXT and _NOTES_ANCHOR in text_of(r):
             memo_ids = set(_inline_memo_ids(r))
-            hdr = None
+            hdr_idx = None
             for j in range(i - 1, -1, -1):
                 if records[j].tag == PARA_HEADER:
-                    hdr = records[j]
+                    hdr_idx = j
                     break
                 if records[j].tag == PARA_TEXT:
                     break
-            if hdr is None:
+            if hdr_idx is None:
                 raise ContractError("특이사항 문단 헤더를 찾지 못했습니다.")
-            set_plain_text(hdr, r, text)
+            set_plain_text(records[hdr_idx], r, text)
+            # 이 문단은 원래 4줄(LINE_SEG 4개)로 나뉘어 있었다 — 글자 수가
+            # 바뀌었는데 낡은 캐시를 그대로 두면 문서 보안설정 [높음]에서
+            # 파일이 열리지 않는다(exclusive_supply_writer 에서 실측 확인한
+            # 것과 동일한 문제, CLAUDE.md 0번 규칙 참고). _drop_memos() 는
+            # 인덱스에 의존하지 않고 태그 기준으로 다시 훑으므로, 인덱스가
+            # 아직 유효한 지금 먼저 정리한다.
+            clear_stale_line_seg(records, hdr_idx)
             if memo_ids:
                 _drop_memos(records, memo_ids)
             return
