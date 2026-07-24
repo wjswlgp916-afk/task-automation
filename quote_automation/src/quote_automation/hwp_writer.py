@@ -173,9 +173,23 @@ _MEMO_CTRL_ID = b"knu%"
 def strip_memo_controls(records: List[Record]) -> int:
     """문서에 남아있는 한글 메모(코멘트)를 찾아 제거한다.
 
-    원본 양식을 만들 때 검토용으로 남긴 메모가 지워지지 않은 채 템플릿에
-    섞여 있으면, 그 메모가 걸린 문단을 포함하는 모든 산출물에 매번
-    따라오고 — 한글에서 "메모를 읽는 중 오류" 경고까지 띄운다.
+    ⚠ 주의(실측으로 확인): 이 함수는 한글 "문서 보안 설정"이 [높음]일 때
+    파일이 열리지 않는 원인이 된다. 정상(보통/낮음) 보안에서는 문제없이
+    열리지만, 높음에서는 "메모 앵커(CTRL_HEADER)가 있는데 그 메모 내용
+    (MEMO_LIST)이 없다"는 불일치를 위변조 의심으로 보고 차단하는 것으로
+    보인다. 격리 테스트로 확인한 결과:
+      * CTRL_HEADER 를 조금이라도 건드리면(제거/이동) → 무조건 차단(높음).
+      * MEMO_LIST 내용을 완전히 빈 문자열로 만들면 → 그 자체로 손상(모든
+        보안 단계에서 열리지 않음, 빈 문단이 유효하지 않은 듯).
+      * MEMO_LIST 내용을 공백 1개로 채우고, CTRL_HEADER 는 전혀 안 건드리면
+        → 높음 보안에서도 정상적으로 열림(유일하게 검증된 안전한 조합).
+    따라서 메모를 "보이지 않게" 만들어야 하는 새 코드는 이 함수 대신
+    strip_memo_controls_safe() 를 쓸 것 — CTRL_HEADER 는 그대로 두고
+    MEMO_LIST 내용만 공백으로 비운다.
+
+    이 함수(strip_memo_controls)는 메모가 아예 없어야 하는 특수한 상황이나
+    기존 호출부와의 호환을 위해 남겨두지만, 새로 메모를 처리해야 하는
+    코드에는 추천하지 않는다.
 
     메모는 두 부분으로 이루어져 있다.
       1. 본문 문단을 필드(누름틀)처럼 감싸는 CTRL_HEADER(id="knu%") — 문단을
@@ -223,6 +237,44 @@ def strip_memo_controls(records: List[Record]) -> int:
         i += 1
     records[:] = kept
     return removed
+
+
+def strip_memo_controls_safe(records: List[Record]) -> int:
+    """메모(코멘트) 내용만 안 보이게 비우고, 앵커(CTRL_HEADER)는 절대 건드리지 않는다.
+
+    ⚠ 실측으로 확인된 규칙(높음 보안에서 "파일이 손상되었습니다" 문제 해결책):
+      * CTRL_HEADER(메모 앵커, id="knu%")는 위치·내용 어느 것도 건드리면 안
+        된다 — 조금이라도 건드리면 높음 보안에서 무조건 차단된다.
+      * MEMO_LIST(메모 내용) 안의 문단을 완전히 빈 문자열로 만들면, 그 자체로
+        파일이 손상된다(빈 문단이 유효하지 않은 듯, 모든 보안 단계에서 열리지
+        않음).
+      * MEMO_LIST 안의 문단을 공백 1개(" ")로 채우면, 앵커는 그대로 두었으므로
+        정상/높음 보안 모두에서 문제없이 열린다 — 이것이 검증된 유일한 안전한
+        방법이다.
+
+    strip_memo_controls() 와 달리 CTRL_HEADER 와 MEMO_LIST 레코드 자체는
+    하나도 지우지 않고 그대로 둔 채, MEMO_LIST 안 문단들의 텍스트만 공백으로
+    비운다. 비운 문단 개수를 반환한다.
+    """
+    count = 0
+    i = 0
+    n = len(records)
+    while i < n:
+        r = records[i]
+        if r.tag == MEMO_LIST:
+            base_level = r.level
+            j = i + 1
+            while j < n and records[j].tag != MEMO_LIST and records[j].level >= base_level:
+                if records[j].tag == PARA_TEXT:
+                    hdr = _prev_para_header(records, j)
+                    if hdr:
+                        set_plain_text(hdr, records[j], " ")
+                        count += 1
+                j += 1
+            i = j
+            continue
+        i += 1
+    return count
 
 
 _RANGE_TAG_ENTRY_SIZE = 12   # UINT32 시작 + UINT32 끝 + (RGB 3바이트 + 종류 1바이트)
