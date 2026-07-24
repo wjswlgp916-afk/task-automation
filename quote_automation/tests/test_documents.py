@@ -838,14 +838,27 @@ def test_exclusive_supply_registered():
     assert template_path(doc).exists()
 
 
+def _body_line_seg_segs(recs):
+    """본문 문단(K-NSSE/UICA 소개 문단) 바로 뒤 LINE_SEG 의 세그먼트 수.
+    LINE_SEG 자체가 없으면 None(= 지워짐, clear_stale_line_seg 가 한 일)."""
+    for i, r in enumerate(recs):
+        if r.tag != PARA_TEXT or "성균관대학교 교육과미래연구소에서 수행하는" not in text_of(r):
+            continue
+        for j in range(i + 1, min(i + 4, len(recs))):
+            if recs[j].tag == PARA_LINE_SEG:
+                return len(recs[j].payload) // 36
+        return None
+    raise AssertionError("본문 문단을 찾지 못함")
+
+
 def test_exclusive_supply_k_only_matches_reference(tmp_path):
     """배재대학교 참고본과 동일한 문구 + 메모 전부 제거.
 
-    한글이 메모를 직접 삭제할 때도 CTRL_HEADER/MEMO_LIST 를 통째로 지우고
-    감싸여 있던 텍스트는 그대로 두는 것을 실측(사용자가 한글에서 직접
-    메모 삭제 후 저장한 파일과 원본을 바이트 비교)으로 확인했으므로,
-    strip_memo_controls() 의 완전 제거 방식이 한글 자신의 동작과 구조적으로
-    같다 — 문서 보안설정 [높음]에서도 문제없이 열린다."""
+    문서 보안설정 [높음]에서 파일이 안 열리던 진짜 원인은 메모(CTRL_HEADER)
+    가 아니라, 본문처럼 원래 2줄 이상이던 문단의 글자 수를 바꾸면서 낡은
+    LINE_SEG(줄 나눔 캐시)를 그대로 두는 것이었다(사용자가 실제 한글
+    [높음] 보안설정에서 직접 재현·확인). _rewrite_paragraph 가
+    clear_stale_line_seg() 로 이 캐시를 지우는지 함께 검증한다."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("배재대학교", "K_P_12", date(2025, 8, 28))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -858,6 +871,7 @@ def test_exclusive_supply_k_only_matches_reference(tmp_path):
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
     assert memo == 0
     assert sum(1 for r in recs if r.tag == 93) == 0
+    assert _body_line_seg_segs(recs) is None, "본문을 다시 썼는데 낡은 LINE_SEG 가 남아있음"
     _assert_exsupply_structure_ok(recs)
 
 
@@ -875,12 +889,15 @@ def test_exclusive_supply_u_only_matches_reference(tmp_path):
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
     assert memo == 0
     assert sum(1 for r in recs if r.tag == 93) == 0
+    assert _body_line_seg_segs(recs) is None, "본문을 다시 썼는데 낡은 LINE_SEG 가 남아있음"
     _assert_exsupply_structure_ok(recs)
 
 
 def test_exclusive_supply_combined_removes_all_memos(tmp_path):
     """K+U 결합이면 본문(눈에 보이는 글자)은 손대지 않고 대학명만 채우되,
-    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙)."""
+    메모는 이 서류에서는 전부 제거한다(사용자 확정 규칙). 본문 자체를
+    다시 쓰지 않으므로 원본 LINE_SEG(15 세그먼트)가 그대로 남아있어야
+    한다(건드릴 필요도, 지울 필요도 없음)."""
     doc = DOCUMENT_TYPES["exclusive_supply"]
     q = build_quote("한성대학교", "K_P_12+U_P_1", date(2025, 9, 10))
     out = doc.render_hwp(q, tmp_path / "e.hwp", None)
@@ -892,6 +909,7 @@ def test_exclusive_supply_combined_removes_all_memos(tmp_path):
     memo = sum(1 for r in recs if r.tag == 71 and r.payload[:4] == b"knu%")
     assert memo == 0
     assert sum(1 for r in recs if r.tag == 93) == 0
+    assert _body_line_seg_segs(recs) is not None and _body_line_seg_segs(recs) > 1
     _assert_exsupply_structure_ok(recs)
 
 

@@ -123,6 +123,46 @@ def set_plain_text(para_hdr: Record, para_txt: Record, new_text: str) -> None:
     para_hdr.payload = struct.pack("<I", nchars) + para_hdr.payload[4:]
 
 
+def clear_stale_line_seg(records: List[Record], hdr_idx: int) -> bool:
+    """문단의 글자 수가 바뀐 뒤, 여러 줄로 나뉘어 있던 낡은 LINE_SEG 캐시를
+    지운다(개수도 0으로).
+
+    ⚠ 실측으로 확인(중요): 문단 텍스트 길이를 바꾸면서 PARA_LINE_SEG(줄
+    나눔 캐시)를 그대로 둔 채 놔두면, 그 문단이 원래 **2줄 이상**으로
+    나뉘어 있던 경우 문서 보안설정 [높음]에서 파일이 열리지 않는다(사용자가
+    직접 재현·확인함 — 실제 한글에서 메모를 지운 파일에 본문만 다시 써서
+    테스트). 반대로 문단이 원래 **1줄**뿐이었다면(예: 대학명·발급일자 같은
+    짧은 필드) 길이가 달라져도 문제없이 열린다 — 그래서 이 함수는 세그먼트
+    개수가 2개 이상일 때만 손을 댄다.
+
+    처음에는 "LINE_SEG 를 아예 건드리지 않아야 안전하다"고 알고 있었으나
+    (실제로 계약서 특이사항처럼 원래 1줄이던 문단은 이 규칙이 맞다), 이번에
+    본문처럼 원래 여러 줄이던 문단에 같은 방식을 썼다가 위 문제를 겪었다.
+    반면 세그먼트 수를 억지로 1개로 선언하면(거짓 데이터) 한글이 그 선언을
+    그대로 믿어 모든 글자를 한 줄에 겹쳐 그리는 손상이 난다(따로 겪은 문제).
+    "아예 지우고 개수 0" 은 이 두 문제를 모두 피하면서 검증된 유일한
+    안전한 방법이다 — 한글이 캐시가 없다고 보고 줄바꿈을 새로 계산한다.
+
+    ``records[hdr_idx]`` 는 PARA_HEADER 여야 한다. 지웠으면 True, 원래
+    세그먼트가 1개 이하라 손대지 않았으면 False 를 반환한다.
+    """
+    assert records[hdr_idx].tag == PARA_HEADER
+    j = hdr_idx + 1
+    n = len(records)
+    while j < n and records[j].tag not in (PARA_HEADER, CTRL_HEADER):
+        if records[j].tag == PARA_LINE_SEG:
+            segs = len(records[j].payload) // 36
+            if segs <= 1:
+                return False
+            del records[j]
+            p = bytearray(records[hdr_idx].payload)
+            struct.pack_into("<H", p, 16, 0)
+            records[hdr_idx].payload = bytes(p)
+            return True
+        j += 1
+    return False
+
+
 def _adjust_para_header_length(para_hdr: Record, delta: int) -> None:
     (nchars,) = struct.unpack("<I", para_hdr.payload[0:4])
     new_len = (nchars & 0x7FFFFFFF) + delta
