@@ -18,7 +18,7 @@ import tempfile
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from flask import (
     Flask, request, render_template, send_from_directory,
@@ -95,20 +95,37 @@ def _tool_view():
 
 
 def _doc_type_view():
-    """템플릿에 넘길 서류 종류 목록 (추가 입력 항목 포함)."""
-    out = []
+    """템플릿에 넘길 서류 종류 목록."""
+    return [
+        {"key": key, "label": doc.label, "supports_pdf": doc.supports_pdf,
+         "has_extra": bool(doc.extra_fields)}
+        for key, doc in DOCUMENT_TYPES.items()
+    ]
+
+
+def _all_extra_fields_view():
+    """모든 서류의 추가 입력 항목을 key 기준으로 합쳐 반환한다(어떤 서류들이
+    이 항목을 쓰는지도 함께).
+
+    계약서·착수계·서약서처럼 여러 서류가 같은 extra 키(예: contract_date,
+    period_start)를 공유하는 경우, 서류마다 입력칸을 따로 만들면 같은
+    name 의 <input> 이 여러 개 생겨 폼 제출 시 값이 뒤섞인다(실제로 겪은
+    버그 — 착수계만 체크해도 완료계용 숨은 입력칸이 같은 이름으로 남아있어
+    제출값이 그쪽에서 읽혀 "값을 입력하세요" 오류가 계속 남). 그래서 입력칸은
+    key 하나당 딱 하나만 만들고, 어느 서류 체크박스가 켜지면 보일지는
+    'docs' 목록으로 표시해 프론트엔드에서 처리한다.
+    """
+    owners: Dict[str, List[str]] = {}
+    fields: Dict[str, object] = {}
     for key, doc in DOCUMENT_TYPES.items():
-        out.append({
-            "key": key,
-            "label": doc.label,
-            "supports_pdf": doc.supports_pdf,
-            "extra": [
-                {"key": f.key, "label": f.label, "kind": f.kind,
-                 "required": f.required, "default": f.default, "help": f.help}
-                for f in doc.extra_fields
-            ],
-        })
-    return out
+        for f in doc.extra_fields:
+            fields.setdefault(f.key, f)
+            owners.setdefault(f.key, []).append(key)
+    return [
+        {"key": f.key, "label": f.label, "kind": f.kind, "required": f.required,
+         "default": f.default, "help": f.help, "docs": owners[f.key]}
+        for f in fields.values()
+    ]
 
 
 @app.route("/")
@@ -118,6 +135,7 @@ def index():
         "index.html",
         tools=_tool_view(),
         doc_types=_doc_type_view(),
+        all_extra=_all_extra_fields_view(),
         today=date.today().isoformat(),
         premier_price=f"{PREMIER_BASE_PRICE:,}",
         addon_price=f"{ADDON_PRICE:,}",
@@ -206,6 +224,7 @@ def do_generate():
     if errors:
         return render_template(
             "index.html", tools=_tool_view(), doc_types=_doc_type_view(),
+            all_extra=_all_extra_fields_view(),
             today=issue_date.isoformat(),
             premier_price=f"{PREMIER_BASE_PRICE:,}", addon_price=f"{ADDON_PRICE:,}",
             errors=errors, form=f,

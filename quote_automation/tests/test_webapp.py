@@ -173,6 +173,34 @@ def test_completion_report_generates_with_dates(client):
     assert r.get_data(as_text=True).count("/download/") == 2   # 완료계 HWP+PDF
 
 
+def test_extra_field_inputs_not_duplicated_across_doc_types(client):
+    """완료계·착수계(계약년월일·완료기한)나 계약서·서약서(자문 시작일)처럼
+    여러 서류가 같은 추가 입력 key 를 공유할 때, 입력칸(<input name=...>)이
+    서류마다 따로 생기면 안 된다 — 같은 name 이 여러 개면 폼 제출 시 값이
+    엉뚱한(숨겨진) 입력칸에서 읽혀, 사용자가 값을 채워도 계속 '값을
+    입력하세요' 오류가 나는 버그가 실제로 있었다."""
+    html = client.get("/", headers=_auth()).get_data(as_text=True)
+    for key in ("contract_date", "completion_deadline", "period_start"):
+        assert html.count(f'name="extra_{key}"') == 1, f"'{key}' 입력칸이 중복됨"
+
+
+def test_commencement_alone_generates_without_completion_report_checked(client):
+    """착수계만 체크하고(완료계는 체크 안 함) 계약년월일을 채우면 정상
+    생성돼야 한다 — 완료계용 숨은 입력칸과 이름이 겹쳐 값이 뒤섞이던
+    회귀 버그 재현 테스트."""
+    r = client.post("/generate", headers=_auth(), data={
+        "university": "서울여자대학교", "date": "2026-07-24",
+        "K_include": "on", "K_grade": "P",
+        "doc_quote": "on", "doc_commencement": "on",
+        "extra_contract_date": "2026-09-01",
+        "fmt_hwp": "on", "fmt_pdf": "on",
+    })
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200, body
+    assert "착수계" in body
+    assert "값을 입력하세요" not in body
+
+
 def test_generate_multiple_doc_types(client):
     # 견적서(HWP+PDF) + 거래명세서(HWP+PDF) 를 동시에 선택
     r = client.post("/generate", headers=_auth(), data={
