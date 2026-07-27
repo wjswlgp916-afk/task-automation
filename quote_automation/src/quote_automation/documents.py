@@ -32,6 +32,7 @@ from . import (
     invoice_writer,
     pdf_writer,
     security_pledge_writer,
+    warranty_bond_writer,
 )
 from .engine import Quote
 
@@ -181,6 +182,19 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
         extra_fields=(
             ExtraField("period_start", "자문 시작일", "date", default="2026-09-01",
                        help="보통 고정 (필요시 수정, 계약서와 공유)"),
+        ),
+    ),
+    "warranty_bond": DocumentType(
+        key="warranty_bond",
+        label="하자(보수)이행보증각서",
+        render_hwp=warranty_bond_writer.render_hwp,
+        render_pdf=warranty_bond_writer.render_pdf,
+        template_filename="warranty_bond_template.hwp",
+        extra_fields=(
+            ExtraField("period_start", "자문 시작일", "date", default="2026-09-01",
+                       help="보통 고정 (필요시 수정, 계약서와 공유)"),
+            ExtraField("period_end", "자문 종료일", "date", default="2027-01-31",
+                       help="보통 고정 (필요시 수정, 계약서와 공유) — 하자보증기간은 이 날짜 다음날부터 1년간 자동 계산"),
         ),
     ),
 }

@@ -1233,3 +1233,96 @@ def test_generate_security_pledge_hwp_and_pdf(tmp_path):
                      formats=["hwp", "pdf"], doc_types=["security_pledge"])
     assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
     assert all(f.path.is_file() for f in files)
+
+
+# --------------------------------------------------------------------------- #
+# 하자(보수)이행보증각서 (HWP + PDF, 자문기간을 계약서와 공유)
+# --------------------------------------------------------------------------- #
+def test_warranty_bond_registered_with_extra_fields():
+    assert "warranty_bond" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["warranty_bond"]
+    assert doc.label == "하자(보수)이행보증각서"
+    assert doc.supports_pdf is True
+    assert template_path(doc).exists()
+    keys = [f.key for f in doc.extra_fields]
+    assert keys == ["period_start", "period_end"]
+    assert doc.extra_fields[0].default == "2026-09-01"
+    assert doc.extra_fields[1].default == "2027-01-31"
+
+
+def test_warranty_bond_extra_fields_shared_with_contract():
+    fields = extra_fields_for(["warranty_bond", "contract"])
+    keys = [f.key for f in fields]
+    assert keys.count("period_start") == 1
+    assert keys.count("period_end") == 1
+
+
+@pytest.mark.parametrize("code,expect_subject", [
+    ("K_P_12", "학부교육의 질과 성과 진단 및 분석"),
+    ("U_P_1", "대학 혁신역량 진단 및 분석"),
+    ("K_P_12+U_P_1", "학부교육의 질과 성과 진단 및 분석"),
+])
+def test_warranty_bond_hwp_fields(tmp_path, code, expect_subject):
+    doc = DOCUMENT_TYPES["warranty_bond"]
+    q = build_quote("호서대학교", code, date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "w.hwp", None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    from quote_automation.hwp_writer import serialize_records
+    assert serialize_records(recs) == data
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert f"계  약  명 : {expect_subject}" in joined
+    assert "계 약 기 간 : 2026.  09.  01. ~ 2027.  01.  31." in joined
+    deposit = round(q.grand_total * 0.03)
+    assert f"계  약  금 : {number_to_korean_plain(q.grand_total)}원정(₩{q.grand_total:,})" in joined
+    assert f"하 자 보 증 금 : {number_to_korean_plain(deposit)}원정(₩{deposit:,})" in joined
+    assert "하 자 보 증 율 : 계약금액의 3%" in joined
+    # 하자보증기간: 계약종료일(2027-01-31) 다음날부터 1년간
+    assert "하 자 보 증 기 간 : 2027. 02. 01 ~ 2028. 02. 01" in joined
+    assert "2026년  08월  15일" in joined     # 발급일자
+    assert "호서대학교 귀하" in joined
+    assert "00대학교" not in joined
+    assert "성균관대학교 산학협력단" in joined and "구 자 춘" in joined
+
+
+def test_warranty_bond_defect_period_follows_custom_period_end(tmp_path):
+    doc = DOCUMENT_TYPES["warranty_bond"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    extra = coerce_extra(["warranty_bond"], {"period_end": "2027-06-30"})
+    out = doc.render_hwp(q, tmp_path / "w.hwp", None, extra=extra)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert "계 약 기 간 : 2026.  09.  01. ~ 2027.  06.  30." in joined
+    assert "하 자 보 증 기 간 : 2027. 07. 01 ~ 2028. 07. 01" in joined
+
+
+def test_warranty_bond_no_leftover_memo_or_highlight(tmp_path):
+    doc = DOCUMENT_TYPES["warranty_bond"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "w.hwp", None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
+    assert not any(r.tag == 93 for r in recs)
+    assert not any(r.tag == 70 for r in recs)
+
+
+def test_warranty_bond_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["warranty_bond"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "w.pdf")
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "하 자 (보 수) 이 행 보 증 각 서" in text
+    assert "호서대학교 귀하" in text
+    assert "구 자 춘" in text
+
+
+def test_generate_warranty_bond_hwp_and_pdf(tmp_path):
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     formats=["hwp", "pdf"], doc_types=["warranty_bond"])
+    assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
+    assert all(f.path.is_file() for f in files)
