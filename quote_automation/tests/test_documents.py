@@ -263,6 +263,22 @@ def test_generate_unknown_doc_type_raises(tmp_path):
                  doc_types=["존재하지않는서류"])
 
 
+def test_generate_output_paths_are_flat_for_all_doc_types(tmp_path):
+    """generator._safe() 가 doc_type.label 도 정제해야 한다 — 안 그러면
+    '정보보안/개인정보 서약서' 처럼 '/' 가 들어간 라벨이 out_dir 밑에
+    의도치 않은 하위 폴더를 만들어, GeneratedFile.path.name 이 실제
+    파일 위치와 어긋나면서 웹 대시보드 다운로드가 404 나는 버그가 있었다."""
+    raw = {"contract_start": "2026-09-01", "work_start": "2026-09-01", "work_end": "2026-12-31"}
+    extra = coerce_extra(list(DOCUMENT_TYPES), raw)
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     formats=["hwp", "pdf"], doc_types=list(DOCUMENT_TYPES), extra=extra)
+    assert files
+    for gf in files:
+        assert gf.path.is_file()
+        assert gf.path.parent == tmp_path, f"{gf.doc_label} 파일이 out_dir 바로 밑에 있지 않음: {gf.path}"
+        assert (tmp_path / gf.path.name) == gf.path
+
+
 def test_quote_template_still_default_when_doctype_not_specified(tmp_path):
     files = generate("테스트대학교", "U_P", tmp_path, date(2026, 7, 21))
     assert len(files) == 2  # 기본값 quote: HWP + PDF

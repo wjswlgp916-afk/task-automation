@@ -61,7 +61,7 @@ def generate(
             valid = ", ".join(DOCUMENT_TYPES)
             raise ValueError(f"알 수 없는 서류 종류 '{doc_key}' (가능: {valid})")
         doc_type = DOCUMENT_TYPES[doc_key]
-        stem = f"{doc_type.label}_{_safe(university)}_{_safe(code)}_{quote.issue_date:%Y%m%d}"
+        stem = f"{_safe(doc_type.label)}_{_safe(university)}_{_safe(code)}_{quote.issue_date:%Y%m%d}"
 
         if "hwp" in fmts:
             tpl = template_path(doc_type)
