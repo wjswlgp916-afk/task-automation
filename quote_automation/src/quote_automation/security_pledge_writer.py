@@ -7,10 +7,9 @@
   2. 계약명(자문 내용) : 견적서 등과 동일 규칙(K 단독·결합 유지, U 단독 변경).
   3. 대학명       : 본문 문장 + 수신 문구("OO대학교 총장 귀하") 2곳.
 
-원본 양식 끝의 "20  년   월   일"(서명 날짜)은 서약서에 실제 서명하는 날
-당사자가 직접 손으로 적는 자리라 채우지 않고 템플릿 그대로 남겨둔다(계약서의
-계약체결일과 같은 성격). 업체 서약자(구자춘)·학교 서약집행자(배상훈) 정보와
-직인은 대학과 무관하게 고정이라 원본 그대로 둔다.
+원본 양식 끝의 "20  년   월   일"(서명 날짜)은 서류 발급일자(quote.issue_date)로
+자동 채운다. 업체 서약자(구자춘)·학교 서약집행자(배상훈) 정보와 직인은
+대학과 무관하게 고정이라 원본 그대로 둔다.
 
 본문 문장은 원래 2줄(LINE_SEG 2개)로 나뉘어 있어, 값을 채운 뒤 반드시
 낡은 LINE_SEG 를 정리해야 한다(문서 보안설정 [높음] 대응, CLAUDE.md 0번
@@ -47,6 +46,7 @@ from .hwp_writer import (
 # 원본 양식의 정확한 placeholder 리터럴
 _SUBJECT = "학부교육의 질과 성과 진단 및 분석"
 _PERIOD_START_PLACEHOLDER = "2026년 0월 0일"
+_ISSUE_PLACEHOLDER = "20 년  월   일"
 _UNIV = "OO대학교"
 
 _STAMP_BAE_PATH = Path(__file__).parent / "templates" / "stamp_bae.png"
@@ -64,6 +64,10 @@ def _default_template() -> Path:
 
 def _fmt_body(d: date_cls) -> str:
     return f"{d.year}년 {d.month}월 {d.day}일"
+
+
+def _fmt_issue(d: date_cls) -> str:
+    return f"{d.year}년   {d.month}월   {d.day}일"
 
 
 def _period_start(extra: Optional[dict]) -> date_cls:
@@ -112,6 +116,11 @@ def render_hwp(quote: Quote, out_path: str | Path, template: Optional[Path] = No
     if replace_literal_everywhere(records, _UNIV, quote.university) < 1:
         raise SecurityPledgeError("양식에서 대학명 자리를 찾지 못했습니다.")
     clear_stale_line_seg(records, hdr_idx)
+
+    # 서명 날짜 자리 -> 서류 발급일자로 자동 채움.
+    issue_hdr_idx, _ = _find_para(records, _ISSUE_PLACEHOLDER)
+    rep(_ISSUE_PLACEHOLDER, _fmt_issue(quote.issue_date), "서명일자")
+    clear_stale_line_seg(records, issue_hdr_idx)
 
     body = serialize_records(records)
     if compressed:
@@ -184,7 +193,7 @@ def render_pdf(quote: Quote, out_path: str | Path, extra: Optional[dict] = None)
         story.append(Spacer(1, 2 * mm))
     story.append(Spacer(1, 10 * mm))
 
-    story.append(Paragraph("20      년      월      일", st["center"]))
+    story.append(Paragraph(_fmt_issue(quote.issue_date), st["center"]))
     story.append(Spacer(1, 14 * mm))
 
     _NBSP = "\xa0"

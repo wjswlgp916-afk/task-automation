@@ -1192,8 +1192,9 @@ def test_security_pledge_hwp_fields(tmp_path, code, expect_subject):
     assert "호서대학교 규정을 준수하겠습니다" in joined
     assert "호서대학교 총장 귀하" in joined
     assert "OO대학교" not in joined
-    # 서명 날짜는 대학이 직접 기입하는 자리라 손대지 않고 그대로 남는다
-    assert "20 년  월   일" in joined
+    # 서명 날짜는 서류 발급일자로 자동 채워진다
+    assert "2026년   8월   15일" in joined
+    assert "20 년  월   일" not in joined
     # 업체/학교 서약자 정보는 대학과 무관하게 고정
     assert "성균관대학교 산학협력단" in joined and "구 자 춘" in joined
     assert "교육과미래연구소" in joined and "배 상 훈" in joined
