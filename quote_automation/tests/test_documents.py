@@ -1343,3 +1343,62 @@ def test_generate_warranty_bond_hwp_and_pdf(tmp_path):
                      formats=["hwp", "pdf"], doc_types=["warranty_bond"])
     assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
     assert all(f.path.is_file() for f in files)
+
+
+# --------------------------------------------------------------------------- #
+# 청렴계약서(서약서) (HWP + PDF, 대학명 + 발급일자만 필요 — 추가 입력 없음)
+# --------------------------------------------------------------------------- #
+def test_integrity_pledge_registered_no_extra_fields():
+    assert "integrity_pledge" in DOCUMENT_TYPES
+    doc = DOCUMENT_TYPES["integrity_pledge"]
+    assert doc.label == "청렴계약서(서약서)"
+    assert doc.supports_pdf is True
+    assert template_path(doc).exists()
+    assert doc.extra_fields == ()
+
+
+def test_integrity_pledge_hwp_fields(tmp_path):
+    doc = DOCUMENT_TYPES["integrity_pledge"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "i.hwp", None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    data = zlib.decompress(sm[("BodyText", "Section0")], -15)
+    recs = parse_records(data)
+    from quote_automation.hwp_writer import serialize_records
+    assert serialize_records(recs) == data
+    joined = " ".join(text_of(r) for r in recs if r.tag == 67)
+    assert "호서대학교 총장 귀하" in joined
+    assert "OO대학교" not in joined
+    assert "2026.   8.   15." in joined     # 발급일자로 자동 채워짐
+    assert "2026.   .   ." not in joined
+    assert "성균관대학교 교육과 미래연구소" in joined and "배상훈" in joined
+
+
+def test_integrity_pledge_no_leftover_memo_or_highlight(tmp_path):
+    doc = DOCUMENT_TYPES["integrity_pledge"]
+    q = build_quote("호서대학교", "K_P_12", date(2026, 8, 15))
+    out = doc.render_hwp(q, tmp_path / "i.hwp", None)
+    sm = {tuple(p): d for p, d in cfbf.read_streams(str(out))}
+    recs = parse_records(zlib.decompress(sm[("BodyText", "Section0")], -15))
+    assert not any(r.tag == 71 and r.payload[:4] == b"knu%" for r in recs)
+    assert not any(r.tag == 93 for r in recs)
+    assert not any(r.tag == 70 for r in recs)
+
+
+def test_integrity_pledge_pdf_renders(tmp_path):
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+    doc = DOCUMENT_TYPES["integrity_pledge"]
+    q = build_quote("호서대학교", "K_P_12+U_P_1", date(2026, 8, 15))
+    out = doc.render_pdf(q, tmp_path / "i.pdf")
+    text = pdfium.PdfDocument(str(out))[0].get_textpage().get_text_range()
+    assert "청 렴 계 약 서 (서 약 서)" in text
+    assert "호서대학교 총장 귀하" in text
+    assert "배 상 훈" in text
+
+
+def test_generate_integrity_pledge_hwp_and_pdf(tmp_path):
+    files = generate("호서대학교", "K_P_12", tmp_path, date(2026, 8, 15),
+                     formats=["hwp", "pdf"], doc_types=["integrity_pledge"])
+    assert sorted(f.path.suffix for f in files) == [".hwp", ".pdf"]
+    assert all(f.path.is_file() for f in files)

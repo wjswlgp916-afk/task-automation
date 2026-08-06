@@ -29,6 +29,7 @@ from . import (
     guaranty_writer,
     hwp_writer,
     inspection_writer,
+    integrity_pledge_writer,
     invoice_writer,
     pdf_writer,
     security_pledge_writer,
@@ -196,6 +197,13 @@ DOCUMENT_TYPES: Dict[str, DocumentType] = {
             ExtraField("period_end", "자문 종료일", "date", default="2027-01-31",
                        help="보통 고정 (필요시 수정, 계약서와 공유) — 하자보증기간은 이 날짜 다음날부터 1년간 자동 계산"),
         ),
+    ),
+    "integrity_pledge": DocumentType(
+        key="integrity_pledge",
+        label="청렴계약서(서약서)",
+        render_hwp=integrity_pledge_writer.render_hwp,
+        render_pdf=integrity_pledge_writer.render_pdf,
+        template_filename="integrity_pledge_template.hwp",
     ),
 }
 
